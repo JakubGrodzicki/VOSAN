@@ -66,6 +66,13 @@ local function on_recording_finished(start_pos, end_pos)
   if recorded_row and recorded_row.script_name_safe ~= "" and state.auto_advance then
     vosan_state.select_next(state)
   end
+
+  -- Przesuwa kursor edycji na koniec wlasnie nagranej kwestii (+ zapasu), zeby
+  -- realizator mogl od razu nacisnac Record na kolejne ujecie bez recznego
+  -- przestawiania kursora na timeline'ie.
+  if state.auto_move_cursor then
+    reaper.SetEditCurPos(end_pos + (state.post_record_gap or 0), true, false)
+  end
 end
 
 -- Jesli ten sam blad powtarza sie klatka po klatce (np. ReaImGui nie moze

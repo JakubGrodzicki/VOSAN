@@ -89,6 +89,13 @@ wykrywanie nagrania działają na natywnym API REAPERa w czystym Lua.
    „Auto-przejście do następnej kwestii po nagraniu” jest zaznaczony
    (domyślne ustawienie). Nagrywaj kolejną kwestię bez klikania w oknie
    VOSAN.
+7. VOSAN przesunie kursor edycji na koniec nagrania automatycznie, jeśli
+   checkbox „Przesuń kursor na koniec nagrania automatycznie” jest
+   zaznaczony (domyślne ustawienie). Pole „Odstęp po nagraniu (s)”
+   ustala, o ile sekund dalej za koniec nagrania trafi kursor (domyślnie
+   0,5 s). Dzięki temu realizator albo aktor może od razu nacisnąć
+   Record na kolejną kwestię, bez ręcznego przesuwania kursora na
+   timeline’ie.
 
 ### Retake (powtórka nagrania)
 

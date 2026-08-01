@@ -48,6 +48,8 @@ function M.new()
     last_file_suggestion = nil,
     skip_header = true,
     auto_advance = true,
+    auto_move_cursor = true, -- po nagraniu przesun kursor edycji na koniec itemu + post_record_gap
+    post_record_gap = 0.5,   -- sekundy odstepu doklejane po koncu nagrania przy przesuwaniu kursora
     duplicates = {},
     last_warning = nil,
     recorded_count = 0,

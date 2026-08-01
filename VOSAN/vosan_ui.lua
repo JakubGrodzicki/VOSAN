@@ -208,6 +208,24 @@ local function draw_search_controls(ctx, state)
     if ch3 then state.recording_mc = v3 end
   end
 
+  local ch4, v4 = reaper.ImGui_Checkbox(ctx, "Przesun kursor na koniec nagrania automatycznie", state.auto_move_cursor)
+  if ch4 then state.auto_move_cursor = v4 end
+
+  if state.auto_move_cursor then
+    reaper.ImGui_SameLine(ctx)
+    reaper.ImGui_SetNextItemWidth(ctx, 80)
+    -- InputDouble/DragDouble sa w ReaImGui niepewne co do wersji (patrz
+    -- historia problemow z fontami w tym pliku) - InputText jest juz
+    -- sprawdzone w tym projekcie, wiec bezpieczniej sparsowac liczbe recznie.
+    local ch5, v5 = reaper.ImGui_InputText(ctx, "Odstep po nagraniu (s)", string.format("%.2f", state.post_record_gap or 0))
+    if ch5 then
+      local n = tonumber((v5:gsub(",", ".")))
+      if n and n >= 0 then
+        state.post_record_gap = n
+      end
+    end
+  end
+
   reaper.ImGui_Text(ctx, string.format("Postep: %d / %d nagranych", state.recorded_count or 0, #state.rows))
 end
 
