@@ -1,0 +1,8 @@
+# Pliki testowe / robocze - nie sa czescia dystrybuowanego skryptu
+samples/
+
+# Smieci systemowe / edytorskie
+.DS_Store
+Thumbs.db
+*.swp
+__pycache__/

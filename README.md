@@ -13,7 +13,15 @@ wildcard `@region_name`).
 
 ## Format pliku wejściowego
 
-VOSAN przyjmuje pliki CSV i XLSX. Format kolumn jest następujący:
+VOSAN przyjmuje pliki CSV i XLSX.
+
+> **Zasada kluczowa — bez wyjątków:**
+> **Pierwsza kolumna to ZAWSZE nazwa skryptu.**
+> **Ostatnia kolumna to ZAWSZE tekst kwestii.**
+> Ta zasada obowiązuje niezależnie od liczby kolumn w pliku i niezależnie
+> od tego, czy plik ma nagłówek.
+
+Pełny format kolumn:
 
 1. **Pierwsza kolumna** zawiera nazwę skryptu. VOSAN używa tej nazwy jako
    nazwy regionu.
@@ -149,13 +157,6 @@ oknie. Zmień nazwę tego regionu ręcznie w REAPERze.
 2. Ustaw źródło (Source) na „Regions”.
 3. Wpisz wildcard `@region_name` w polu nazwy pliku.
 4. Kliknij Render.
-
-## Pliki testowe
-
-Folder `samples/` zawiera przykładowe pliki `sample_kwestie.csv` i
-`sample_kwestie.xlsx`. Oba pliki mają identyczną zawartość: 10 wierszy
-testowych, w tym jeden celowy duplikat nazwy skryptu. Użyj tych plików
-do szybkiego sprawdzenia importu po instalacji.
 
 ## Ograniczenia
 
