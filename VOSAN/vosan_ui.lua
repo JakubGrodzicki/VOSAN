@@ -25,6 +25,7 @@ local COLOR_RECORDED = 0x50D070FF
 local COLOR_WARNING  = 0xFF5050FF
 local COLOR_DUPWARN  = 0xFFC050FF
 local COLOR_DIM      = 0xAAAAAAFF
+local COLOR_TARGET   = 0x4FA0E8FF -- kwestie aktualnie nagrywanej postaci (MC albo NPC)
 
 local REGION_REFRESH_INTERVAL = 1.0 -- sekundy
 
@@ -159,6 +160,11 @@ local function draw_now_recording_panel(ctx, state)
     end
 
     reaper.ImGui_Text(ctx, "Nazwa skryptu: " .. (row.script_name_safe ~= "" and row.script_name_safe or "(BRAK NAZWY!)"))
+
+    if state.mc_column_index and not vosan_state.row_matches_target(state, row) then
+      colored_text(ctx, COLOR_DIM,
+        "Uwaga: ta kwestia nalezy do drugiej postaci w arkuszu (kontekst rozmowy), nie do aktualnie nagrywanej.")
+    end
   else
     colored_text(ctx, COLOR_DIM, "Brak wybranej kwestii - kliknij wiersz w tabeli ponizej.")
   end
@@ -192,6 +198,12 @@ local function draw_search_controls(ctx, state)
     if state.raw_rows then
       vosan_state.load_rows(state, state.raw_rows, state.skip_header)
     end
+  end
+
+  if state.mc_column_index then
+    reaper.ImGui_SameLine(ctx)
+    local ch3, v3 = reaper.ImGui_Checkbox(ctx, "Czy nagrywamy glownego bohatera (MC)?", state.recording_mc)
+    if ch3 then state.recording_mc = v3 end
   end
 
   reaper.ImGui_Text(ctx, string.format("Postep: %d / %d nagranych", state.recorded_count or 0, #state.rows))
@@ -238,11 +250,16 @@ local function draw_table(ctx, state)
         if row then
           reaper.ImGui_TableNextRow(ctx)
 
+          -- Priorytet kolorow: wybrana (pomaranczowy) > nagrana (zielony) >
+          -- kwestia aktualnie nagrywanej postaci (niebieski) > kwestia
+          -- drugiej postaci w arkuszu, tylko kontekst (szary).
           local color = nil
           if idx == state.selected then
             color = COLOR_SELECTED
           elseif row.recorded then
             color = COLOR_RECORDED
+          elseif state.mc_column_index then
+            color = vosan_state.row_matches_target(state, row) and COLOR_TARGET or COLOR_DIM
           end
 
           reaper.ImGui_TableNextColumn(ctx)

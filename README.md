@@ -91,6 +91,39 @@ projekcie istnieje zawsze tylko jedna, najnowsza wersja każdej kwestii.
 Zielony wiersz w tabeli oznacza kwestię z istniejącym regionem
 (nagraną). Kolor pomarańczowy oznacza aktualnie wybraną kwestię.
 
+### Kwestie głównego bohatera (MC) i pozostałych postaci
+
+Niektóre arkusze zawierają kwestie dwóch postaci naraz: głównego
+bohatera (MC) i drugiej postaci, której arkusz dotyczy. Powodem jest
+zachowanie kontekstu rozmowy. Realizator nagrywa jedną postać na raz z
+tego samego arkusza.
+
+VOSAN rozpoznaje ten przypadek automatycznie. Warunek: plik ma kolumnę o
+nazwie „MC” z wartościami „Tak” albo „Nie”. Jeśli ten warunek jest
+spełniony, w oknie VOSAN pojawi się dodatkowy checkbox „Czy nagrywamy
+głównego bohatera (MC)?”.
+
+- Checkbox odznaczony (domyślne ustawienie): VOSAN pomija kwestie MC
+  przy auto-przejściu. VOSAN zatrzymuje się tylko na kwestiach z
+  wartością „Nie” w kolumnie MC.
+- Checkbox zaznaczony: VOSAN pomija kwestie pozostałych postaci przy
+  auto-przejściu. VOSAN zatrzymuje się tylko na kwestiach z wartością
+  „Tak” w kolumnie MC.
+
+Tabela pokazuje wszystkie kwestie przez cały czas, także te, które nie
+należą do aktualnie nagrywanej postaci. Powodem jest zachowanie
+kontekstu rozmowy dla aktora. Kolor wiersza pokazuje status kwestii:
+
+1. Pomarańczowy: aktualnie wybrana kwestia.
+2. Zielony: kwestia ma już nagrany region.
+3. Niebieski: kwestia należy do aktualnie nagrywanej postaci (zgodnie z
+   checkboxem) i czeka na nagranie.
+4. Szary: kwestia należy do drugiej postaci w arkuszu. Ta kwestia służy
+   tylko jako kontekst rozmowy.
+
+Realizator może kliknąć dowolny wiersz ręcznie, także szary. Checkbox
+wpływa tylko na auto-przejście i na kolory w tabeli.
+
 ### Brak wybranej kwestii
 
 VOSAN nie gubi żadnego nagrania. Jeśli nagranie zakończy się bez

@@ -24,10 +24,19 @@ local function trim(s)
   return (s or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
+-- Nazwa kolumny (w naglowku), ktora wlacza rozroznianie glownego bohatera
+-- (MC) od pozostalych postaci w arkuszu. Dopasowanie bez wzgledu na
+-- wielkosc liter. Jesli plik nie ma takiej kolumny, cala funkcja
+-- MC/NPC jest wylaczona i VOSAN dziala jak dotychczas (bez rozroznienia).
+local MC_COLUMN_LABEL = "mc"
+local MC_TRUE_VALUE = "tak"
+
 function M.new()
   return {
     rows = {},
     extra_labels = {},       -- etykiety kolumn "srodkowych" (miedzy nazwa skryptu a trescia)
+    mc_column_index = nil,    -- indeks w row.extras kolumny "MC", albo nil gdy plik jej nie ma
+    recording_mc = false,     -- false = nagrywamy NPC (MC="Nie"), true = nagrywamy MC (MC="Tak")
     raw_rows = nil,           -- ostatnio sparsowana surowa siatka (do przeladowania przy zmianie skip_header)
     filter_text = "",
     filtered = {},
@@ -105,11 +114,31 @@ function M.load_rows(state, raw_rows, skip_header)
 
   state.rows = rows
   state.extra_labels = extra_labels
+  state.recording_mc = false
+
+  state.mc_column_index = nil
+  for i, label in ipairs(extra_labels) do
+    if label:lower() == MC_COLUMN_LABEL then
+      state.mc_column_index = i
+      break
+    end
+  end
+
   state.selected = (#rows > 0) and 1 or nil
   state.duplicates = M.find_duplicates(rows)
   state.regions_dirty = true
   M.refresh_filter(state)
   return rows
+end
+
+--- Zwraca true, jesli dany wiersz nalezy do aktualnie nagrywanej postaci
+--- (MC albo NPC, wg state.recording_mc). Jesli plik nie ma kolumny "MC",
+--- kazdy wiersz "pasuje" - funkcja MC/NPC jest wtedy nieaktywna.
+function M.row_matches_target(state, row)
+  if not state.mc_column_index then return true end
+  local val = (row.extras[state.mc_column_index] or ""):lower()
+  local is_mc = (val == MC_TRUE_VALUE)
+  return state.recording_mc == is_mc
 end
 
 function M.find_duplicates(rows)
@@ -158,16 +187,27 @@ function M.select_row(state, idx)
   state.selected = idx
 end
 
---- Przesuwa wybor na kolejny wiersz w obrebie AKTUALNIE WIDOCZNEGO
---- (odfiltrowanego) zbioru. Uzywane po auto-przejsciu po nagraniu.
+--- Przesuwa wybor na KOLEJNY PASUJACY wiersz w obrebie AKTUALNIE WIDOCZNEGO
+--- (odfiltrowanego) zbioru - pomija wiersze innej postaci (patrz
+--- row_matches_target), zeby auto-przejscie po nagraniu nie zatrzymywalo
+--- sie na kwestiach kontekstowych drugiej postaci w arkuszu. Uzywane po
+--- auto-przejsciu po nagraniu.
 function M.select_next(state)
   if not state.selected then return end
+  local start_pos = nil
   for pos, idx in ipairs(state.filtered) do
     if idx == state.selected then
-      local next_idx = state.filtered[pos + 1]
-      if next_idx then
-        state.selected = next_idx
-      end
+      start_pos = pos
+      break
+    end
+  end
+  if not start_pos then return end
+
+  for pos = start_pos + 1, #state.filtered do
+    local idx = state.filtered[pos]
+    local row = state.rows[idx]
+    if row and M.row_matches_target(state, row) then
+      state.selected = idx
       return
     end
   end
