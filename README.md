@@ -124,6 +124,18 @@ kontekstu rozmowy dla aktora. Kolor wiersza pokazuje status kwestii:
 Realizator może kliknąć dowolny wiersz ręcznie, także szary. Checkbox
 wpływa tylko na auto-przejście i na kolory w tabeli.
 
+### Ukrywanie kolumn
+
+Okno VOSAN pokazuje checkbox „Pokaż kolumny” z jedną pozycją dla każdej
+kolumny środkowej (na przykład „Plik źródłowy”, „MC”). Odznacz kolumnę,
+żeby ją ukryć. Ta zmiana upraszcza widok dla aktora.
+
+Nazwa skryptu i tekst kwestii są widoczne zawsze. Te dwie kolumny nie
+mają checkboxa.
+
+Ukrycie kolumny „MC” zmienia tylko widok tabeli. Ukrycie kolumny „MC”
+nie wyłącza rozpoznawania głównego bohatera opisanego wyżej.
+
 ### Brak wybranej kwestii
 
 VOSAN nie gubi żadnego nagrania. Jeśli nagranie zakończy się bez

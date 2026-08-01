@@ -35,6 +35,8 @@ function M.new()
   return {
     rows = {},
     extra_labels = {},       -- etykiety kolumn "srodkowych" (miedzy nazwa skryptu a trescia)
+    hidden_columns = {},      -- {[etykieta]=true} - kolumny srodkowe ukryte na zyczenie realizatora
+                               -- (celowo NIE resetowane przy wczytaniu pliku - wybor ma przetrwac przeladowanie)
     mc_column_index = nil,    -- indeks w row.extras kolumny "MC", albo nil gdy plik jej nie ma
     recording_mc = false,     -- false = nagrywamy NPC (MC="Nie"), true = nagrywamy MC (MC="Tak")
     raw_rows = nil,           -- ostatnio sparsowana surowa siatka (do przeladowania przy zmianie skip_header)

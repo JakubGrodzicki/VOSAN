@@ -150,9 +150,11 @@ local function draw_now_recording_panel(ctx, state)
 
     local extra_parts = {}
     for i, label in ipairs(state.extra_labels or {}) do
-      local val = row.extras[i]
-      if val and val ~= "" then
-        extra_parts[#extra_parts + 1] = label .. ": " .. val
+      if not state.hidden_columns[label] then
+        local val = row.extras[i]
+        if val and val ~= "" then
+          extra_parts[#extra_parts + 1] = label .. ": " .. val
+        end
       end
     end
     if #extra_parts > 0 then
@@ -209,6 +211,28 @@ local function draw_search_controls(ctx, state)
   reaper.ImGui_Text(ctx, string.format("Postep: %d / %d nagranych", state.recorded_count or 0, #state.rows))
 end
 
+--- Checkboxy widocznosci dla kolumn "srodkowych" (nazwa skryptu i tresc
+--- kwestii sa zawsze widoczne - to kolumny strukturalne, nie informacyjne).
+--- Wybor jest per-etykieta i przetrwa przeladowanie pliku w tej samej sesji.
+local function draw_column_visibility_controls(ctx, state)
+  local labels = state.extra_labels or {}
+  if #labels == 0 then return end
+
+  reaper.ImGui_Text(ctx, "Pokaz kolumny:")
+  for i, label in ipairs(labels) do
+    reaper.ImGui_SameLine(ctx)
+    local visible = not state.hidden_columns[label]
+    local changed, new_val = reaper.ImGui_Checkbox(ctx, label .. "##colvis" .. i, visible)
+    if changed then
+      if new_val then
+        state.hidden_columns[label] = nil
+      else
+        state.hidden_columns[label] = true
+      end
+    end
+  end
+end
+
 local function draw_table(ctx, state)
   if #state.rows == 0 then
     colored_text(ctx, COLOR_DIM, "Wczytaj plik CSV lub XLSX, zeby zobaczyc liste kwestii.")
@@ -216,7 +240,14 @@ local function draw_table(ctx, state)
   end
 
   local extra_labels = state.extra_labels or {}
-  local n_cols = 2 + #extra_labels -- Nazwa skryptu + kolumny srodkowe + Tresc kwestii
+  -- indeksy kolumn srodkowych, ktore NIE sa ukryte (patrz draw_column_visibility_controls)
+  local visible_extras = {}
+  for i, label in ipairs(extra_labels) do
+    if not state.hidden_columns[label] then
+      visible_extras[#visible_extras + 1] = i
+    end
+  end
+  local n_cols = 2 + #visible_extras -- Nazwa skryptu + widoczne kolumny srodkowe + Tresc kwestii
 
   local avail_w, avail_h = reaper.ImGui_GetContentRegionAvail(ctx)
   local table_flags = reaper.ImGui_TableFlags_Resizable()
@@ -227,8 +258,8 @@ local function draw_table(ctx, state)
 
   if reaper.ImGui_BeginTable(ctx, "vosan_table", n_cols, table_flags, avail_w, avail_h) then
     reaper.ImGui_TableSetupColumn(ctx, "Nazwa skryptu", reaper.ImGui_TableColumnFlags_WidthFixed(), 220)
-    for _, label in ipairs(extra_labels) do
-      reaper.ImGui_TableSetupColumn(ctx, label, reaper.ImGui_TableColumnFlags_WidthFixed(), 110)
+    for _, i in ipairs(visible_extras) do
+      reaper.ImGui_TableSetupColumn(ctx, extra_labels[i], reaper.ImGui_TableColumnFlags_WidthFixed(), 110)
     end
     reaper.ImGui_TableSetupColumn(ctx, "Tresc kwestii", 0, 1.0)
     reaper.ImGui_TableSetupScrollFreeze(ctx, 0, 1)
@@ -271,7 +302,7 @@ local function draw_table(ctx, state)
             state.selected = idx
           end
 
-          for i = 1, #extra_labels do
+          for _, i in ipairs(visible_extras) do
             reaper.ImGui_TableNextColumn(ctx)
             reaper.ImGui_Text(ctx, row.extras[i] or "")
           end
@@ -302,6 +333,7 @@ function M.draw_contents(ctx, state)
   draw_file_controls(ctx, state)
   draw_now_recording_panel(ctx, state)
   draw_search_controls(ctx, state)
+  draw_column_visibility_controls(ctx, state)
   reaper.ImGui_Separator(ctx)
   draw_table(ctx, state)
 end
