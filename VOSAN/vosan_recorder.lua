@@ -21,7 +21,14 @@ local M = {}
 
 local was_recording = false
 local last_known_snapshot = {}
+local last_snapshot_fingerprint = nil
+local last_snapshot_change_count = nil
 local pending_deadline = nil -- nil = nie czekamy; liczba = reaper.time_precise() deadline
+
+-- GetProjectStateChangeCount istnieje w REAPERze od dawna, ale strazniki API sa
+-- w tym skrypcie standardem (patrz VOSAN.lua) - brak funkcji ma tylko wylaczyc
+-- ta jedna optymalizacje, a nie wywrocic watcher.
+local HAS_CHANGE_COUNT = reaper.APIExists('GetProjectStateChangeCount')
 -- Gorny limit PROB wykrycia nowego itemu po zatrzymaniu nagrywania - NIE jest
 -- to stale opoznienie doliczane do kazdego ujecia (sprawdzanie konczy sie
 -- natychmiast, gdy item zostanie znaleziony - w praktyce ~0.01s). To tylko
@@ -70,6 +77,36 @@ local function find_new_items(armed_tracks, old_snapshot)
   return new_items
 end
 
+local function project_change_count()
+  if HAS_CHANGE_COUNT then return reaper.GetProjectStateChangeCount(0) end
+  return nil
+end
+
+--- Tani odcisk stanu uzbrojonych sciezek: ktore sciezki sa uzbrojone i ile maja
+--- itemow. Same wywolania zwracajace liczby - bez tablic i bez stringow GUID -
+--- wiec mozna to liczyc w kazdej klatce. Koszt jest proporcjonalny do liczby
+--- sciezek, a nie do liczby nagranych itemow.
+local function armed_fingerprint()
+  local fp = 0
+  local count = reaper.CountTracks(0)
+  for i = 0, count - 1 do
+    local tr = reaper.GetTrack(0, i)
+    if reaper.GetMediaTrackInfo_Value(tr, "I_RECARM") == 1 then
+      fp = (fp * 31 + i * 1000003 + reaper.CountTrackMediaItems(tr)) % 0x7FFFFFFF
+    end
+  end
+  return fp
+end
+
+--- Zapisuje migawke itemow razem z odciskiem stanu, ktory ja opisuje. Oba
+--- znaczniki musza pochodzic z tej samej chwili co migawka, inaczej kolejna
+--- klatka uznalaby ja za nieaktualna albo, gorzej, za aktualna mimo zmiany.
+local function store_snapshot(armed_tracks)
+  last_known_snapshot = snapshot_armed_items(armed_tracks)
+  last_snapshot_fingerprint = armed_fingerprint()
+  last_snapshot_change_count = project_change_count()
+end
+
 local function bounds_of(items)
   local start_pos, end_pos = nil, nil
   for _, item in ipairs(items) do
@@ -101,13 +138,22 @@ function M.poll(on_recording_finished)
       local start_pos, end_pos = bounds_of(new_items)
       on_recording_finished(start_pos, end_pos)
       pending_deadline = nil
-      last_known_snapshot = snapshot_armed_items(get_armed_tracks())
+      store_snapshot(armed_tracks)
     elseif reaper.time_precise() > pending_deadline then
       pending_deadline = nil
-      last_known_snapshot = snapshot_armed_items(get_armed_tracks())
+      store_snapshot(armed_tracks)
     end
   elseif not is_recording then
-    last_known_snapshot = snapshot_armed_items(get_armed_tracks())
+    -- Migawka nadal ma byc gotowa PRZED startem nagrywania, ale nie ma czego
+    -- odswiezac, dopoki nic sie nie zmienilo. Poprzednia wersja czytala GUID
+    -- kazdego itemu na uzbrojonych sciezkach w kazdej klatce; koszt rosl przez
+    -- cala sesje i byl najwyzszy pod jej koniec.
+    local fingerprint = armed_fingerprint()
+    local change_count = project_change_count()
+    if fingerprint ~= last_snapshot_fingerprint
+      or change_count ~= last_snapshot_change_count then
+      store_snapshot(get_armed_tracks())
+    end
   end
 
   was_recording = is_recording

@@ -50,6 +50,7 @@ function M.new()
     auto_advance = true,
     auto_move_cursor = true, -- po nagraniu przesun kursor edycji na koniec itemu + post_record_gap
     post_record_gap = 0.5,   -- sekundy odstepu doklejane po koncu nagrania przy przesuwaniu kursora
+    post_record_gap_text = "0.50", -- bufor pola tekstowego dla powyzszej wartosci (patrz vosan_ui)
     duplicates = {},
     last_warning = nil,
     recorded_count = 0,
@@ -93,6 +94,10 @@ function M.load_rows(state, raw_rows, skip_header)
   local start_i = (skip_header and #raw_rows > 0) and 2 or 1
   local extra_labels = determine_extra_labels(raw_rows, skip_header, start_i)
 
+  -- Bufor sklejania tekstu do wyszukiwania, reuzywany miedzy wierszami, zeby
+  -- nie alokowac osobnej tablicy na kazdy wiersz pliku.
+  local blob_buf = {}
+
   for i = start_i, #raw_rows do
     local r = raw_rows[i]
     local n = #r
@@ -105,13 +110,33 @@ function M.load_rows(state, raw_rows, skip_header)
     end
 
     if script_name ~= "" or text ~= "" or #extras > 0 then
-      rows[#rows + 1] = {
-        n = #rows + 1,
+      local row_n = #rows + 1
+
+      -- search_blob: wszystkie pola wiersza sklejone i zamienione na male litery
+      -- RAZ, przy wczytaniu pliku. refresh_filter robil to wczesniej osobno dla
+      -- kazdego pola przy KAZDYM nacisnieciu klawisza w wyszukiwarce. Separator
+      -- "\1" nie wystepuje w tekscie z arkusza, wiec dopasowanie nie moze
+      -- przeskoczyc granicy dwoch kolumn - tak samo jak przy szukaniu po polach.
+      blob_buf[1] = script_name
+      blob_buf[2] = text
+      local bn = 2
+      for k = 1, #extras do
+        bn = bn + 1
+        blob_buf[bn] = extras[k]
+      end
+
+      rows[row_n] = {
+        n = row_n,
         script_name = script_name,
         script_name_safe = M.sanitize_name(script_name),
         extras = extras,
         text = text,
         recorded = false,
+        search_blob = table.concat(blob_buf, "\1", 1, bn):lower(),
+        -- etykieta Selectable dla tabeli; jest stala przez cale zycie wiersza,
+        -- wiec nie ma powodu skladac jej na nowo w kazdej klatce (vosan_ui)
+        ui_label = (script_name ~= "" and script_name or "(brak nazwy)")
+          .. "##vosanrow" .. row_n,
       }
     end
   end
@@ -162,26 +187,21 @@ function M.find_duplicates(rows)
   return list
 end
 
+--- Szuka w prekalkulowanym row.search_blob (patrz load_rows) zamiast zamieniac
+--- kazde pole na male litery przy kazdym wywolaniu.
 function M.refresh_filter(state)
   local q = (state.filter_text or ""):lower()
+  local rows = state.rows
   local filtered = {}
   if q == "" then
-    for i = 1, #state.rows do filtered[#filtered + 1] = i end
+    for i = 1, #rows do filtered[i] = i end
   else
-    for i, row in ipairs(state.rows) do
-      local matches = row.script_name:lower():find(q, 1, true) ~= nil
-      if not matches then
-        matches = row.text:lower():find(q, 1, true) ~= nil
+    local n = 0
+    for i = 1, #rows do
+      if rows[i].search_blob:find(q, 1, true) then
+        n = n + 1
+        filtered[n] = i
       end
-      if not matches then
-        for _, ex in ipairs(row.extras) do
-          if ex:lower():find(q, 1, true) then
-            matches = true
-            break
-          end
-        end
-      end
-      if matches then filtered[#filtered + 1] = i end
     end
   end
   state.filtered = filtered

@@ -39,10 +39,6 @@ local function getbits(br, n)
   return val
 end
 
-local function getbit(br)
-  return getbits(br, 1)
-end
-
 local function align_byte(br)
   local drop = br.bitcnt % 8
   br.bitbuf = br.bitbuf >> drop
@@ -50,53 +46,78 @@ local function align_byte(br)
 end
 
 -- === Huffman ================================================================
--- Kanoniczne drzewo Huffmana (RFC1951 3.2.2), zdekodowane jako mapa
--- {[dlugosc_kodu] = {[wartosc_kodu] = symbol}}. Dekodowanie idzie bit po bicie
--- (najwyzej 15 bitow), sprawdzajac po kazdym bicie czy zebrany kod jest
--- kompletny dla danej dlugosci - to prostsza (choc nie najszybsza mozliwa)
--- metoda, wystarczajaca do jednorazowego importu pliku.
+-- Kanoniczne drzewo Huffmana (RFC1951 3.2.2) trzymane jako dwie plaskie
+-- tablice, metoda z referencyjnego dekodera "puff" ze zrodel zlib:
+--   counts[l] = ile kodow ma dlugosc l,
+--   symbols   = symbole uporzadkowane wg (dlugosc kodu, wartosc kodu).
+-- Dekodowanie idzie bit po bicie (najwyzej 15 bitow), ale odczyt bitow jest
+-- wpisany wprost w petle i operuje na zmiennych lokalnych. Poprzednia wersja
+-- wolala na kazdy bit trzy funkcje (getbit -> getbits -> br_ensure) i szukala
+-- w tablicy haszowanej; przy imporcie liczonym w milionach bitow to dominowalo
+-- caly czas dekompresji.
 
 local MAXBITS = 15
 
 local function build_huffman(lengths)
-  local bl_count = {}
-  for b = 0, MAXBITS do bl_count[b] = 0 end
+  local counts = {}
+  for l = 0, MAXBITS do counts[l] = 0 end
+  for i = 1, #lengths do
+    local l = lengths[i]
+    counts[l] = counts[l] + 1
+  end
+  counts[0] = 0 -- symbole o dlugosci kodu 0 nie wystepuja w strumieniu
+
+  local offsets = {}
+  offsets[1] = 0
+  for l = 1, MAXBITS - 1 do
+    offsets[l + 1] = offsets[l] + counts[l]
+  end
+
+  local symbols = {}
   for i = 1, #lengths do
     local l = lengths[i]
     if l > 0 then
-      bl_count[l] = bl_count[l] + 1
+      symbols[offsets[l] + 1] = i - 1
+      offsets[l] = offsets[l] + 1
     end
   end
 
-  local next_code = {}
-  local code = 0
-  for bits = 1, MAXBITS do
-    code = (code + bl_count[bits - 1]) << 1
-    next_code[bits] = code
-  end
-
-  local codes_by_len = {}
-  for i = 1, #lengths do
-    local l = lengths[i]
-    if l > 0 then
-      local c = next_code[l]
-      next_code[l] = c + 1
-      codes_by_len[l] = codes_by_len[l] or {}
-      codes_by_len[l][c] = i - 1
-    end
-  end
-  return codes_by_len
+  return { counts = counts, symbols = symbols }
 end
 
-local function decode_symbol(br, codes_by_len)
-  local code = 0
-  for len = 1, MAXBITS do
-    code = (code << 1) | getbit(br)
-    local tbl = codes_by_len[len]
-    if tbl and tbl[code] ~= nil then
-      return tbl[code]
+local function decode_symbol(br, huff)
+  local counts, symbols = huff.counts, huff.symbols
+  local data, len = br.data, br.len
+  local bitbuf, bitcnt, bytepos = br.bitbuf, br.bitcnt, br.bytepos
+  -- code: kod zebrany do tej pory, first: najmniejszy kod danej dlugosci,
+  -- index: ile symbolow maja kody krotsze niz biezaca dlugosc.
+  local code, first, index = 0, 0, 0
+
+  for l = 1, MAXBITS do
+    if bitcnt == 0 then
+      local b = 0
+      if bytepos <= len then b = string.byte(data, bytepos) end
+      bytepos = bytepos + 1
+      bitbuf, bitcnt = b, 8
     end
+    code = code | (bitbuf & 1)
+    bitbuf = bitbuf >> 1
+    bitcnt = bitcnt - 1
+
+    local count = counts[l]
+    if code - count < first then
+      local sym = symbols[index + (code - first) + 1]
+      if sym == nil then
+        error("nieprawidlowy kod Huffmana - strumien DEFLATE jest uszkodzony")
+      end
+      br.bitbuf, br.bitcnt, br.bytepos = bitbuf, bitcnt, bytepos
+      return sym
+    end
+    index = index + count
+    first = (first + count) << 1
+    code = code << 1
   end
+
   error("nieprawidlowy kod Huffmana - strumien DEFLATE jest uszkodzony")
 end
 
@@ -169,10 +190,9 @@ end
 
 -- konwertuje tablice bajtow (liczby 0-255) na string, w kawalkach (unikamy
 -- limitu argumentow string.char/table.unpack przy duzych plikach)
-local function bytes_to_string(bytes)
+local function bytes_to_string(bytes, n)
   local CHUNK = 4096
   local chunks = {}
-  local n = #bytes
   for i = 1, n, CHUNK do
     local j = math.min(i + CHUNK - 1, n)
     chunks[#chunks + 1] = string.char(table.unpack(bytes, i, j))
@@ -187,6 +207,9 @@ function M.inflate(data)
 
   local br = br_new(data)
   local out = {}
+  -- Jawny licznik dlugosci wyjscia. Poprzednia wersja wolala #out raz na kazdy
+  -- bajt wyniku (i drugi raz w petli kopiowania dopasowan wstecznych).
+  local outn = 0
 
   while true do
     local bfinal = getbits(br, 1)
@@ -197,7 +220,8 @@ function M.inflate(data)
       local len = getbits(br, 16)
       local _nlen = getbits(br, 16)
       for _ = 1, len do
-        out[#out + 1] = getbits(br, 8)
+        outn = outn + 1
+        out[outn] = getbits(br, 8)
       end
     elseif btype == 1 or btype == 2 then
       local lit_codes, dist_codes
@@ -210,7 +234,8 @@ function M.inflate(data)
       while true do
         local sym = decode_symbol(br, lit_codes)
         if sym < 256 then
-          out[#out + 1] = sym
+          outn = outn + 1
+          out[outn] = sym
         elseif sym == 256 then
           break
         else
@@ -225,12 +250,15 @@ function M.inflate(data)
             error("nieprawidlowy symbol odleglosci: " .. tostring(dsym))
           end
           local distance = DIST_BASE[di] + getbits(br, DIST_EXTRA[di])
-          local start = #out - distance + 1
+          local start = outn - distance + 1
           if start < 1 then
             error("nieprawidlowa odleglosc wsteczna w strumieniu DEFLATE")
           end
-          for k = 0, length - 1 do
-            out[#out + 1] = out[start + k]
+          -- kopiowanie musi isc po kolei: przy distance < length czytamy bajty,
+          -- ktore wlasnie dopisalismy w tej samej petli
+          for k = start, start + length - 1 do
+            outn = outn + 1
+            out[outn] = out[k]
           end
         end
       end
@@ -241,7 +269,7 @@ function M.inflate(data)
     if bfinal == 1 then break end
   end
 
-  return bytes_to_string(out)
+  return bytes_to_string(out, outn)
 end
 
 return M

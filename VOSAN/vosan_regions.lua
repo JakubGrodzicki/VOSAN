@@ -6,39 +6,38 @@
 
 local M = {}
 
---- Zwraca tablice wszystkich regionow projektu: {markrgnindexnumber, name, start, stop}.
-function M.get_all_regions()
-  local regions = {}
+--- Zbior nazw wszystkich regionow ({[nazwa]=true}) - do szybkiego sprawdzania
+--- statusu "nagrane" bez powtarzania enumeracji dla kazdego wiersza.
+--- Enumeruje wprost, bez budowania posredniej tablicy rekordow: ta funkcja
+--- chodzi cyklicznie z petli rysowania, a w duzej sesji regionow sa setki.
+function M.get_region_names_set()
+  local set = {}
   local i = 0
   while true do
-    local retval, isrgn, pos, rgnend, name, markrgnindexnumber = reaper.EnumProjectMarkers3(0, i)
+    local retval, isrgn, _, _, name = reaper.EnumProjectMarkers3(0, i)
     if retval == 0 then break end
-    if isrgn then
-      regions[#regions + 1] = {
+    if isrgn then set[name] = true end
+    i = i + 1
+  end
+  return set
+end
+
+--- Zwraca {markrgnindexnumber, name, start, stop} pierwszego regionu o podanej
+--- nazwie, albo nil. Konczy enumeracje na trafieniu.
+function M.find_region_by_name(name)
+  local i = 0
+  while true do
+    local retval, isrgn, pos, rgnend, rname, markrgnindexnumber = reaper.EnumProjectMarkers3(0, i)
+    if retval == 0 then break end
+    if isrgn and rname == name then
+      return {
         markrgnindexnumber = markrgnindexnumber,
-        name = name,
+        name = rname,
         start = pos,
         stop = rgnend,
       }
     end
     i = i + 1
-  end
-  return regions
-end
-
---- Zbior nazw wszystkich regionow ({[nazwa]=true}) - do szybkiego sprawdzania
---- statusu "nagrane" bez powtarzania enumeracji dla kazdego wiersza.
-function M.get_region_names_set()
-  local set = {}
-  for _, r in ipairs(M.get_all_regions()) do
-    set[r.name] = true
-  end
-  return set
-end
-
-function M.find_region_by_name(name)
-  for _, r in ipairs(M.get_all_regions()) do
-    if r.name == name then return r end
   end
   return nil
 end

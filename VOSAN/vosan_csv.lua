@@ -40,16 +40,32 @@ function M.parse_string(content)
   local first_line_end = content:find("[\r\n]") or (#content + 1)
   local delim = M.detect_delimiter(content:sub(1, first_line_end - 1))
 
+  -- Klasa znakow konczacych pole. Ani ',' ani ';' nie sa znakami magicznymi w
+  -- klasie znakow Lua, wiec separator mozna wstawic wprost.
+  local stop_class = '["\r\n' .. delim .. ']'
+  local find, sub = string.find, string.sub
+
   local rows = {}
   local row = {}
-  local field_chars = {}
+  -- Czesci biezacego pola. Bufor jest reuzywany (licznik pn) zamiast tworzony
+  -- na nowo dla kazdego pola. Pole bez cudzyslowow ma dokladnie jedna czesc,
+  -- wiec w typowym pliku nie ma tu ani table.concat, ani alokacji tablicy.
+  local parts, pn = {}, 0
   local in_quotes = false
   local i = 1
   local n = #content
 
   local function push_field()
-    row[#row + 1] = table.concat(field_chars)
-    field_chars = {}
+    local value
+    if pn == 0 then
+      value = ""
+    elseif pn == 1 then
+      value = parts[1]
+    else
+      value = table.concat(parts, "", 1, pn)
+    end
+    row[#row + 1] = value
+    pn = 0
   end
 
   local function push_row()
@@ -58,47 +74,60 @@ function M.parse_string(content)
     row = {}
   end
 
+  -- Zamiast czytac znak po znaku, skaczemy find-em do najblizszego znaku
+  -- specjalnego i bierzemy cala reszte pola jednym sub.
   while i <= n do
-    local c = content:sub(i, i)
     if in_quotes then
-      if c == '"' then
-        if content:sub(i + 1, i + 1) == '"' then
-          field_chars[#field_chars + 1] = '"'
-          i = i + 2
+      local q = find(content, '"', i, true)
+      if not q then
+        -- niedomkniety cudzyslow: reszta pliku jest trescia pola
+        pn = pn + 1
+        parts[pn] = sub(content, i)
+        i = n + 1
+      else
+        if q > i then
+          pn = pn + 1
+          parts[pn] = sub(content, i, q - 1)
+        end
+        if sub(content, q + 1, q + 1) == '"' then
+          pn = pn + 1
+          parts[pn] = '"'
+          i = q + 2
         else
           in_quotes = false
-          i = i + 1
+          i = q + 1
         end
-      else
-        field_chars[#field_chars + 1] = c
-        i = i + 1
       end
     else
-      if c == '"' then
-        in_quotes = true
-        i = i + 1
-      elseif c == delim then
-        push_field()
-        i = i + 1
-      elseif c == '\r' then
-        if content:sub(i + 1, i + 1) == '\n' then
-          push_row()
-          i = i + 2
-        else
-          push_row()
-          i = i + 1
-        end
-      elseif c == '\n' then
-        push_row()
-        i = i + 1
+      local s = find(content, stop_class, i)
+      if not s then
+        pn = pn + 1
+        parts[pn] = sub(content, i)
+        i = n + 1
       else
-        field_chars[#field_chars + 1] = c
-        i = i + 1
+        if s > i then
+          pn = pn + 1
+          parts[pn] = sub(content, i, s - 1)
+        end
+        local c = sub(content, s, s)
+        if c == '"' then
+          in_quotes = true
+          i = s + 1
+        elseif c == delim then
+          push_field()
+          i = s + 1
+        elseif c == '\r' then
+          push_row()
+          i = (sub(content, s + 1, s + 1) == '\n') and (s + 2) or (s + 1)
+        else -- '\n'
+          push_row()
+          i = s + 1
+        end
       end
     end
   end
 
-  if #field_chars > 0 or #row > 0 then
+  if pn > 0 or #row > 0 then
     push_row()
   end
 

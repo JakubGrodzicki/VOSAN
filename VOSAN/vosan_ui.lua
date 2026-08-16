@@ -217,8 +217,12 @@ local function draw_search_controls(ctx, state)
     -- InputDouble/DragDouble sa w ReaImGui niepewne co do wersji (patrz
     -- historia problemow z fontami w tym pliku) - InputText jest juz
     -- sprawdzone w tym projekcie, wiec bezpieczniej sparsowac liczbe recznie.
-    local ch5, v5 = reaper.ImGui_InputText(ctx, "Odstep po nagraniu (s)", string.format("%.2f", state.post_record_gap or 0))
+    -- Do widgetu wraca DOKLADNIE to, co zwrocil poprzednio. Podawanie tu
+    -- string.format("%.2f", ...) nadpisywalo pole w trakcie pisania: wpisanie
+    -- "0,755" bylo zaokraglane do "0.76" jeszcze przed koncem edycji.
+    local ch5, v5 = reaper.ImGui_InputText(ctx, "Odstep po nagraniu (s)", state.post_record_gap_text)
     if ch5 then
+      state.post_record_gap_text = v5
       local n = tonumber((v5:gsub(",", ".")))
       if n and n >= 0 then
         state.post_record_gap = n
@@ -313,8 +317,8 @@ local function draw_table(ctx, state)
 
           reaper.ImGui_TableNextColumn(ctx)
           if color then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), color) end
-          local label = (row.script_name ~= "" and row.script_name or "(brak nazwy)") .. "##vosanrow" .. idx
-          local clicked = reaper.ImGui_Selectable(ctx, label, idx == state.selected, span_flag)
+          -- etykieta jest skladana raz, przy wczytaniu pliku (vosan_state)
+          local clicked = reaper.ImGui_Selectable(ctx, row.ui_label, idx == state.selected, span_flag)
           if color then reaper.ImGui_PopStyleColor(ctx) end
           if clicked then
             state.selected = idx
