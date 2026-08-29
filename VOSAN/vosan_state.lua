@@ -57,7 +57,9 @@ function M.new()
     duplicates = {},
     last_warning = nil,
     last_info = nil,        -- komunikat informacyjny (np. podsumowanie przygotowanego renderu)
-    recorded_count = 0,
+    recorded_count = 0,      -- nagrane kwestie w CALYM pliku
+    target_total = 0,        -- kwestie w aktualnym zakresie nagrywania (patrz refresh_target_counts)
+    target_recorded = 0,     -- z tego juz nagrane
     regions_dirty = true,
     _last_region_refresh = 0,
   }
@@ -219,6 +221,7 @@ function M.load_rows(state, raw_rows, skip_header)
   state.duplicates = M.find_duplicates(rows)
   state.regions_dirty = true
   M.refresh_filter(state)
+  M.refresh_target_counts(state)
   return rows
 end
 
@@ -308,6 +311,27 @@ function M.select_next(state)
   end
 end
 
+--- Liczniki dla AKTUALNEGO ZAKRESU nagrywania, a nie dla calego pliku.
+--- Przy nagrywaniu NPC kwestie MC nie sa "do zrobienia", wiec nie powinny
+--- podbijac mianownika - inaczej sesja konczy sie na 11/12 mimo nagrania
+--- wszystkiego, co bylo do nagrania. Zakres wyznacza row_matches_target, wiec
+--- obejmuje jednoczesnie wybor postaci i przelacznik MC/NPC.
+---
+--- Wolane przy kazdym odswiezeniu regionow ORAZ recznie z UI po zmianie
+--- zakresu (przelacznik MC/NPC, wybor postaci) - sama zmiana zakresu nie
+--- rusza regionow, wiec nie zlapalaby sie na regions_dirty.
+function M.refresh_target_counts(state)
+  local total, done = 0, 0
+  for _, row in ipairs(state.rows) do
+    if M.row_matches_target(state, row) then
+      total = total + 1
+      if row.recorded then done = done + 1 end
+    end
+  end
+  state.target_total = total
+  state.target_recorded = done
+end
+
 --- Odswieza flage "recorded" kazdego wiersza na podstawie zbioru nazw
 --- istniejacych regionow projektu (region_names_set: {[nazwa]=true}).
 function M.refresh_recorded_status(state, region_names_set)
@@ -318,6 +342,7 @@ function M.refresh_recorded_status(state, region_names_set)
     if rec then count = count + 1 end
   end
   state.recorded_count = count
+  M.refresh_target_counts(state)
 end
 
 return M

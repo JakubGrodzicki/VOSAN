@@ -328,23 +328,33 @@ local function draw_file_controls(ctx, state)
     colored_label(ctx, COLOR_CONTEXT, "Nie wczytano pliku")
   end
 
-  local total = #state.rows
+  -- Licznik pokazuje AKTUALNY ZAKRES (wybrana postac + MC/NPC), a nie caly
+  -- plik - patrz vosan_state.refresh_target_counts.
+  local total = state.target_total or 0
   if total > 0 then
     -- Postep przy prawej krawedzi; gdy sciezka pliku zajmie cala linie,
     -- same_line_right przenosi go do nowej zamiast wypychac poza okno.
-    local PROGRESS_BLOCK = 300
-    same_line_right(ctx, row_x, full_w, PROGRESS_BLOCK)
+    local file_total = #state.rows
+    local narrowed = file_total > total
+    same_line_right(ctx, row_x, full_w, narrowed and 420 or 300)
 
-    local done = state.recorded_count or 0
+    local done = state.target_recorded or 0
     colored_label(ctx, TXT_SECOND, "Nagrano")
     reaper.ImGui_SameLine(ctx)
     local shown = pcall(reaper.ImGui_ProgressBar, ctx, done / total, 190, 14, "")
     if shown then
       reaper.ImGui_SameLine(ctx)
     end
-    colored_label(ctx, COLOR_RECORDED, tostring(done))
+    colored_label(ctx, done >= total and COLOR_RECORDED or TXT_MAIN, tostring(done))
     reaper.ImGui_SameLine(ctx, 0, 4)
     colored_label(ctx, TXT_SECOND, "/ " .. tostring(total))
+
+    -- Gdy zakres jest wezszy niz plik, mowimy to wprost - inaczej "8 / 8" przy
+    -- 12 wierszach na liscie wyglada jak blad licznika.
+    if narrowed then
+      reaper.ImGui_SameLine(ctx, 0, 8)
+      colored_label(ctx, COLOR_CONTEXT, "(z " .. tostring(file_total) .. " w pliku)")
+    end
   end
 
   if not state.loaded_file and state.last_file_suggestion then
@@ -496,6 +506,8 @@ local function draw_mc_switch(ctx, state)
     end
     if reaper.ImGui_Button(ctx, caption) then
       state.recording_mc = value
+      -- Zmiana zakresu nie rusza regionow, wiec liczniki trzeba przeliczyc tu.
+      vosan_state.refresh_target_counts(state)
     end
     if pushed > 0 then
       reaper.ImGui_PopStyleColor(ctx, pushed)
@@ -734,6 +746,9 @@ local function draw_filter_controls(ctx, state, dl)
   if changed then
     state.filter_text = new_val
     vosan_state.refresh_filter(state)
+    -- Filtr przestawia pozycje wierszy, wiec poprzednio wyliczone przewiniecie
+    -- juz nie pasuje - wymuszamy ponowne dojechanie do wybranej kwestii.
+    state._scrolled_to = nil
   end
 
   if has_character then
@@ -746,6 +761,7 @@ local function draw_filter_controls(ctx, state, dl)
         local is_selected = (state.current_character == char_name)
         if reaper.ImGui_Selectable(ctx, char_name, is_selected) then
           state.current_character = char_name
+          vosan_state.refresh_target_counts(state)
           -- Zmiana wybranej postaci nie filtruje samej listy ukrywajac wiersze,
           -- tylko zmienia ich 'target' status w row_matches_target (kolory/auto-przejscie).
           -- Jednak wyszukiwarka dziala po `search_blob`, a my nie chcemy ukrywac kontekstu.
@@ -842,6 +858,48 @@ local function draw_table(ctx, state, dl)
     local filtered = state.filtered
     local span_flag = reaper.ImGui_SelectableFlags_SpanAllColumns()
 
+    -- === Auto-przewijanie do wybranej kwestii ==============================
+    -- Po auto-przejsciu (select_next) wybor potrafi wyladowac ponizej
+    -- widocznego zakresu, a pasek przewijania zostaje na miejscu - aktor traci
+    -- swoja kwestie z oczu. Przewijamy TYLKO wtedy, gdy wybor faktycznie
+    -- wypadl poza widok, zeby nie odbierac realizatorowi recznego przewijania.
+    --
+    -- Wysokosc wiersza jest MIERZONA (patrz nizej), a nie zakladana: zalezy od
+    -- CellPadding i wysokosci linii tekstu, wiec liczenie jej z gory
+    -- rozjechaloby sie przy kazdej zmianie stylu albo skali interfejsu.
+    if state.selected ~= state._scrolled_to then
+      local row_h = state._row_h
+      if row_h and row_h > 0 then
+        local pos = nil
+        for i = 1, #filtered do
+          if filtered[i] == state.selected then
+            pos = i
+            break
+          end
+        end
+
+        if pos then
+          local top = (pos - 1) * row_h
+          local ok_scroll, scroll = pcall(reaper.ImGui_GetScrollY, ctx)
+          -- Widoczna wysokosc to wysokosc tabeli minus wiersz naglowka.
+          local view = math.max((avail_h or 0) - row_h, row_h)
+          if ok_scroll and scroll then
+            if top < scroll then
+              pcall(reaper.ImGui_SetScrollY, ctx, math.max(top - row_h, 0))
+            elseif top + row_h > scroll + view then
+              -- Zostawiamy jeden wiersz zapasu pod spodem, zeby bylo widac,
+              -- co bedzie nastepne.
+              pcall(reaper.ImGui_SetScrollY, ctx, top + 2 * row_h - view)
+            end
+          end
+        end
+        state._scrolled_to = state.selected
+      end
+    end
+
+    -- Dwa kolejne wiersze wystarcza, zeby zmierzyc skok pionowy miedzy nimi.
+    local probe_y1, probe_y2 = nil, nil
+
     reaper.ImGui_ListClipper_Begin(clipper, #filtered)
     while reaper.ImGui_ListClipper_Step(clipper) do
       local display_start, display_end = reaper.ImGui_ListClipper_GetDisplayRange(clipper)
@@ -871,6 +929,10 @@ local function draw_table(ctx, state, dl)
           end
 
           reaper.ImGui_TableNextColumn(ctx)
+          if probe_y2 == nil then
+            local _, probe_y = reaper.ImGui_GetCursorScreenPos(ctx)
+            if probe_y1 == nil then probe_y1 = probe_y else probe_y2 = probe_y end
+          end
           status_dot(ctx, dl, dot_color)
 
           reaper.ImGui_TableNextColumn(ctx)
@@ -903,6 +965,10 @@ local function draw_table(ctx, state, dl)
           if color then reaper.ImGui_PopStyleColor(ctx) end
         end
       end
+    end
+
+    if probe_y1 and probe_y2 and probe_y2 > probe_y1 then
+      state._row_h = probe_y2 - probe_y1
     end
 
     reaper.ImGui_EndTable(ctx)
