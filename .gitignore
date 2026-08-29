@@ -1,8 +1,15 @@
 # Pliki testowe / robocze - nie sa czescia dystrybuowanego skryptu
 samples/
 
+# Dane wejsciowe testow - generowane deterministycznie przez
+# tests/tools/gen_fixtures.py, wiec nie ma powodu ich sledzic
+tests/fixtures/
+tests/
+
 # Smieci systemowe / edytorskie
 .DS_Store
 Thumbs.db
 *.swp
 __pycache__/
+
+.gitignore

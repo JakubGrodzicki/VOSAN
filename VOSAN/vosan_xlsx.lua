@@ -94,6 +94,39 @@ end
 
 -- === XML (wzorce, bez pelnego parsera) =====================================
 
+--- Iterator po elementach <tag ...>tresc</tag> ORAZ <tag .../> w podanym XML.
+--- Zwraca pare (znacznik_otwierajacy, tresc); dla znacznika samozamykajacego
+--- tresc jest pustym ciagiem.
+---
+--- Excel zapisuje KAZDA pusta komorke, ktora ma jakiekolwiek formatowanie
+--- (obramowanie, wypelnienie, czcionke), jako <c r="B2" s="5"/> - bez </c>.
+--- Wczesniejszy wzorzec "(<c[^>]*>)(.-)</c>" brał wtedy za tresc pustej komorki
+--- cala NASTEPNA komorke: pusta komorka dostawala surowy indeks z sharedStrings,
+--- nastepna znikala, a typ t="s" przepadal, wiec tekst nie byl rozwijany.
+--- W arkuszu z obramowana tabela dotyczy to wiekszosci komorek.
+local function each_element(xml, tag)
+  local open_pattern = "<" .. tag .. "[^>]*>"
+  local close_tag = "</" .. tag .. ">"
+  local pos = 1
+  return function()
+    local s, e = xml:find(open_pattern, pos)
+    if not s then return nil end
+    local open_tag = xml:sub(s, e)
+    if open_tag:sub(-2) == "/>" then
+      pos = e + 1
+      return open_tag, ""
+    end
+    local cs, ce = xml:find(close_tag, e + 1, true)
+    if not cs then
+      -- brak znacznika zamykajacego: bierzemy reszte, zamiast gubic dane
+      pos = #xml + 1
+      return open_tag, xml:sub(e + 1)
+    end
+    pos = ce + 1
+    return open_tag, xml:sub(e + 1, cs - 1)
+  end
+end
+
 function M.xml_unescape(s)
   s = s:gsub("&lt;", "<")
   s = s:gsub("&gt;", ">")
@@ -113,9 +146,9 @@ end
 
 local function parse_shared_strings(xml)
   local strings = {}
-  for si_content in xml:gmatch("<si[^>]*>(.-)</si>") do
+  for _, si_content in each_element(xml, "si") do
     local parts = {}
-    for t_content in si_content:gmatch("<t[^>]*>(.-)</t>") do
+    for _, t_content in each_element(si_content, "t") do
       parts[#parts + 1] = M.xml_unescape(t_content)
     end
     strings[#strings + 1] = table.concat(parts)
@@ -135,13 +168,13 @@ end
 
 local function parse_sheet_rows(sheet_xml, shared_strings)
   local rows = {}
-  local sheet_data = sheet_xml:match("<sheetData>(.-)</sheetData>")
+  local sheet_data = sheet_xml:match("<sheetData[^>]*>(.-)</sheetData>")
   if not sheet_data then return rows end
 
-  for row_content in sheet_data:gmatch("<row[^>]*>(.-)</row>") do
+  for _, row_content in each_element(sheet_data, "row") do
     local row = {}
     local max_col = 0
-    for cell_tag, cell_content in row_content:gmatch("(<c[^>]*>)(.-)</c>") do
+    for cell_tag, cell_content in each_element(row_content, "c") do
       local ref = cell_tag:match('r="([^"]+)"')
       local ctype = cell_tag:match('t="([^"]+)"')
       local col = (ref and col_letters_to_index(ref)) or (max_col + 1)
@@ -176,35 +209,40 @@ local function parse_sheet_rows(sheet_xml, shared_strings)
   return rows
 end
 
--- ustala plik pierwszego arkusza (kolejnosc zakladek) przez xl/workbook.xml +
+-- ustala pliki WSZYSTKICH arkuszy w kolejnosci zakladek, przez xl/workbook.xml +
 -- xl/_rels/workbook.xml.rels, bo nazwa pliku arkusza (np. sheet2.xml) nie
 -- zawsze odpowiada kolejnosci zakladek we wszystkich programach.
-local function resolve_first_sheet_path(data, entries)
-  local fallback = "xl/worksheets/sheet1.xml"
+local function resolve_sheet_paths(data, entries)
+  local fallback = { "xl/worksheets/sheet1.xml" }
 
   local wb_entry = entries["xl/workbook.xml"]
   if not wb_entry then return fallback end
   local wb_xml = extract_entry(data, wb_entry)
   if not wb_xml then return fallback end
 
-  local rid = wb_xml:match('<sheet[^>]-r:id="([^"]+)"')
-    or wb_xml:match('<sheet[^>]-[%w]*:id="([^"]+)"')
-  if not rid then return fallback end
-
   local rels_entry = entries["xl/_rels/workbook.xml.rels"]
   if not rels_entry then return fallback end
   local rels_xml = extract_entry(data, rels_entry)
   if not rels_xml then return fallback end
 
-  local rid_pat = esc_pattern(rid)
-  local target = rels_xml:match('Id="' .. rid_pat .. '"[^>]-Target="([^"]+)"')
-    or rels_xml:match('Target="([^"]+)"[^>]-Id="' .. rid_pat .. '"')
-  if not target then return fallback end
-
-  if target:sub(1, 1) == "/" then
-    return target:sub(2)
+  local paths = {}
+  for sheet_tag in wb_xml:gmatch("<sheet[^>]*>") do
+    -- <sheets> i inne znaczniki zaczynajace sie tak samo nie maja r:id,
+    -- wiec wypadaja same
+    local rid = sheet_tag:match('r:id="([^"]+)"')
+      or sheet_tag:match('[%w]*:id="([^"]+)"')
+    if rid then
+      local rid_pat = esc_pattern(rid)
+      local target = rels_xml:match('Id="' .. rid_pat .. '"[^>]-Target="([^"]+)"')
+        or rels_xml:match('Target="([^"]+)"[^>]-Id="' .. rid_pat .. '"')
+      if target then
+        paths[#paths + 1] = (target:sub(1, 1) == "/") and target:sub(2) or ("xl/" .. target)
+      end
+    end
   end
-  return "xl/" .. target
+
+  if #paths == 0 then return fallback end
+  return paths
 end
 
 --- Wczytuje plik .xlsx z dysku i zwraca surowa siatke wierszy pierwszego
@@ -229,14 +267,6 @@ function M.parse(path)
     local total_entries = u16(data, eocd_pos + 10)
     local entries = parse_central_directory(data, cd_offset, total_entries)
 
-    local sheet_path = resolve_first_sheet_path(data, entries)
-    local sheet_entry = entries[sheet_path]
-    if not sheet_entry then
-      error("Plik xlsx wskazuje na arkusz '" .. sheet_path .. "', ktorego nie ma w archiwum.", 0)
-    end
-    local sheet_xml, serr = extract_entry(data, sheet_entry)
-    if not sheet_xml then error(serr, 0) end
-
     local shared_strings = {}
     local ss_entry = entries["xl/sharedStrings.xml"]
     if ss_entry then
@@ -246,7 +276,29 @@ function M.parse(path)
       end
     end
 
-    return parse_sheet_rows(sheet_xml, shared_strings)
+    -- Wszystkie arkusze skoroszytu ida do jednej siatki, w kolejnosci zakladek.
+    -- Aktor gra wiele postaci, a kazda postac ma wlasny arkusz; glowny bohater
+    -- czyta swoje kwestie z arkuszy wszystkich postaci. Indeksy poczatkow
+    -- arkuszy wracaja w polu sheet_starts, zeby vosan_state mogl pominac wiersz
+    -- naglowka w KAZDYM arkuszu, a nie tylko w pierwszym.
+    local all_rows = {}
+    local sheet_starts = {}
+
+    for _, sheet_path in ipairs(resolve_sheet_paths(data, entries)) do
+      local sheet_entry = entries[sheet_path]
+      if sheet_entry then
+        local sheet_xml, serr = extract_entry(data, sheet_entry)
+        if not sheet_xml then error(serr, 0) end
+        local sheet_rows = parse_sheet_rows(sheet_xml, shared_strings)
+        if #sheet_rows > 0 then
+          sheet_starts[#sheet_starts + 1] = #all_rows + 1
+          table.move(sheet_rows, 1, #sheet_rows, #all_rows + 1, all_rows)
+        end
+      end
+    end
+
+    all_rows.sheet_starts = sheet_starts
+    return all_rows
   end)
 
   if not ok then
@@ -254,7 +306,7 @@ function M.parse(path)
   end
 
   if #rows_or_err == 0 then
-    return nil, "Nie znaleziono zadnych wierszy w pierwszym arkuszu pliku xlsx."
+    return nil, "Nie znaleziono zadnych wierszy w zadnym arkuszu pliku xlsx."
   end
 
   return rows_or_err

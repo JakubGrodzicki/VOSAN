@@ -91,25 +91,47 @@ end
 --- na wiersze modelu {n, script_name, script_name_safe, extras, text}.
 function M.load_rows(state, raw_rows, skip_header)
   local rows = {}
-  local start_i = (skip_header and #raw_rows > 0) and 2 or 1
+
+  -- Ktore wiersze surowej siatki sa naglowkami. Plik xlsx z wieloma arkuszami
+  -- wnosi jeden naglowek na KAZDY arkusz (vosan_xlsx zwraca ich indeksy w polu
+  -- sheet_starts); CSV i starsze siatki maja tylko wiersz pierwszy.
+  local header_rows = {}
+  if skip_header and #raw_rows > 0 then
+    local sheet_starts = raw_rows.sheet_starts
+    if sheet_starts and #sheet_starts > 0 then
+      for _, idx in ipairs(sheet_starts) do header_rows[idx] = true end
+    else
+      header_rows[1] = true
+    end
+  end
+
+  local start_i = 1
+  while header_rows[start_i] do start_i = start_i + 1 end
   local extra_labels = determine_extra_labels(raw_rows, skip_header, start_i)
 
   -- Bufor sklejania tekstu do wyszukiwania, reuzywany miedzy wierszami, zeby
   -- nie alokowac osobnej tablicy na kazdy wiersz pliku.
   local blob_buf = {}
 
-  for i = start_i, #raw_rows do
+  for i = 1, #raw_rows do
     local r = raw_rows[i]
     local n = #r
     local script_name = trim(r[1])
     local text = (n >= 2) and trim(r[n]) or ""
 
     local extras = {}
+    local has_extra_content = false
     for k = 2, n - 1 do
-      extras[#extras + 1] = trim(r[k])
+      local value = trim(r[k])
+      extras[#extras + 1] = value
+      if value ~= "" then has_extra_content = true end
     end
 
-    if script_name ~= "" or text ~= "" or #extras > 0 then
+    -- Wiersz bez nazwy, bez tresci i bez zawartosci kolumn srodkowych nie jest
+    -- kwestia. W arkuszu z obramowana tabela takich wierszy sa setki: komorki
+    -- istnieja, bo maja formatowanie, ale nie zawieraja nic. Sprawdzanie samej
+    -- LICZBY kolumn srodkowych przepuszczalo je do listy aktora.
+    if not header_rows[i] and (script_name ~= "" or text ~= "" or has_extra_content) then
       local row_n = #rows + 1
 
       -- search_blob: wszystkie pola wiersza sklejone i zamienione na male litery
