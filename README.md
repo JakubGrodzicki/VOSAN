@@ -1,181 +1,160 @@
 # VOSAN — Voice Over Script Auto Namer
 
-VOSAN jest skryptem do REAPERa. VOSAN nazywa nagrania dubbingu automatycznie.
-VOSAN tworzy nazwane regiony na osi czasu podczas nagrywania.
+VOSAN to skrypt dla programu REAPER. Skrypt automatycznie nazywa nagrania dubbingowe. VOSAN tworzy nazwane regiony na osi czasu podczas nagrywania.
 
-Realizator wybiera jedną kwestię z listy. Realizator nagrywa aktora
-normalnym transportem REAPERa. VOSAN wykrywa koniec nagrania. VOSAN
-tworzy region wokół nagrania. VOSAN nadaje regionowi nazwę wybranej
-kwestii.
+Proces pracy:
+1. Wybierz kwestię z listy w oknie VOSAN.
+2. Rozpocznij nagrywanie za pomocą standardowego transportu w REAPERze.
+3. Zakończ nagrywanie.
+4. VOSAN automatycznie wykryje koniec nagrania.
+5. VOSAN utworzy region wokół nagranego obiektu.
+6. VOSAN nada regionowi nazwę wybranej kwestii.
 
-Realizator eksportuje pliki ręcznie po sesji (Render, źródło Regions,
-wildcard `@region_name`).
+Po zakończonej sesji wyeksportuj pliki audio (menu Render, źródło Regions, nazwa `@region_name`).
 
 ## Format pliku wejściowego
 
-VOSAN przyjmuje pliki CSV i XLSX.
+VOSAN obsługuje pliki w formacie CSV oraz XLSX.
 
-> **Zasada kluczowa — bez wyjątków:**
-> **Pierwsza kolumna to ZAWSZE nazwa skryptu.**
-> **Ostatnia kolumna to ZAWSZE tekst kwestii.**
-> Ta zasada obowiązuje niezależnie od liczby kolumn w pliku i niezależnie
-> od tego, czy plik ma nagłówek.
+> **Kluczowa zasada:**
+> - **Pierwsza kolumna to ZAWSZE nazwa skryptu.**
+> - **Ostatnia kolumna to ZAWSZE tekst kwestii.**
+> Zasada ta obowiązuje niezależnie od liczby kolumn oraz obecności nagłówka w pliku.
 
-Pełny format kolumn:
+Struktura kolumn w pliku:
 
-1. **Pierwsza kolumna** zawiera nazwę skryptu. VOSAN używa tej nazwy jako
-   nazwy regionu.
-2. **Ostatnia kolumna** zawiera tekst kwestii.
-3. **Kolumny środkowe** są opcjonalne. Kolumny środkowe mogą zawierać
-   dowolne informacje pomocnicze dla aktora (na przykład nazwę pliku
-   źródłowego, flagę głównej postaci). VOSAN wyświetla te kolumny w
-   tabeli i w panelu „Teraz nagrywasz”. VOSAN nie nadaje im żadnego
-   specjalnego znaczenia.
+1. **Pierwsza kolumna (wymagana):** Zawiera nazwę skryptu. VOSAN używa tej wartości jako nazwy tworzonego regionu.
+2. **Ostatnia kolumna (wymagana):** Zawiera tekst kwestii dubbingowej.
+3. **Kolumny środkowe (opcjonalne):** Mogą zawierać dowolne dane pomocnicze (np. nazwę pliku źródłowego lub oznaczenie postaci). VOSAN wyświetla je w tabeli oraz w panelu „Teraz nagrywasz”.
 
-Liczba kolumn środkowych jest dowolna. Plik może mieć 2 kolumny (tylko
-nazwa skryptu i tekst) albo więcej. Przykład z czterema kolumnami:
+Plik może zawierać dwie kolumny (nazwa i tekst) lub więcej.
+
+Przykład pliku z czterema kolumnami:
 
 | Nazwa skryptu       | Plik źródłowy   | MC  | Tekst                          |
-|----------------------|-----------------|-----|----------------------------------|
-| DIA_Straznik_01_01   | Straznik.json   | Nie | Stój! Kto tam idzie?            |
-| DIA_Bohater_03_01    | Bohater.json    | Tak | Coś tu nie gra, muszę uważać.   |
+|---------------------|-----------------|-----|--------------------------------|
+| DIA_Straznik_01_01  | Straznik.json   | Nie | Stój! Kto tam idzie?           |
+| DIA_Bohater_03_01   | Bohater.json    | Tak | Coś tu nie gra, muszę uważać.  |
 
-Pierwszy wiersz może być nagłówkiem. Zaznacz checkbox „Pierwszy wiersz to
-nagłówek” w oknie VOSAN, jeśli plik ma nagłówek. Nazwy kolumn z nagłówka
-staną się etykietami w tabeli i w panelu „Teraz nagrywasz”.
+Pierwszy wiersz pliku może zawierać nagłówki kolumn. Jeśli plik posiada nagłówek, zaznacz opcję „Pierwszy wiersz to nagłówek” w oknie VOSAN. Nazwy kolumn pojawią się jako etykiety w tabeli oraz w panelu „Teraz nagrywasz”.
 
 ## Instalacja
 
-Wykonaj te kroki na każdym urządzeniu, na którym uruchamiasz VOSAN.
+Wykonaj poniższe kroki na każdym komputerze, na którym uruchamiasz VOSAN.
 
-1. Skopiuj folder `VOSAN` do folderu `Scripts` w profilu REAPERa. Znajdź
-   folder `Scripts` przez REAPER → Options → Show REAPER resource path
-   in explorer/finder.
-2. Zainstaluj wtyczkę ReaImGui. Otwórz Extensions → ReaPack → Browse
-   packages. Wpisz `ReaImGui`. Zainstaluj pakiet „ReaImGui: ReaScript
-   binding for Dear ImGui”. Zrestartuj REAPER.
-   - Jeśli REAPER nie ma ReaPacka, zainstaluj go najpierw ze strony
-     reapack.com.
-3. Dodaj VOSAN do listy akcji REAPERa. Otwórz Actions → Show action
-   list. Kliknij New action → Load ReaScript. Wskaż plik `VOSAN.lua`.
-   Możesz przypisać skrót klawiszowy do tej akcji.
-4. Wyłącz monit o zapisie plików po nagraniu. Otwórz Preferences →
-   Audio → Recording. Odznacz „Prompt to save/delete/rename new files:
-   on stop”.
+### Krok 1: Zainstaluj wtyczkę ReaPack (Wymagane)
+Aplikacja wymaga wtyczki ReaPack do instalacji i obsługi biblioteki ReaImGui.
+1. Pobierz odpowiednią wersję wtyczki ReaPack ze strony [reapack.com](https://reapack.com).
+2. Otwórz program REAPER.
+3. Otwórz folder zasobów przez menu `Options` → `Show REAPER resource path in explorer/finder`.
+4. Skopiuj pobrany plik wtyczki (np. `reaper_reapack-x86_64.dll`) do folderu `UserPlugins`.
+5. Zrestartuj program REAPER.
 
-   **Uwaga:** Ten krok jest obowiązkowy. Jeśli to ustawienie zostanie
-   włączone, REAPER pokaże modalne okno po każdym zatrzymaniu nagrania.
-   To okno blokuje cały REAPER, włącznie z VOSAN, aż realizator kliknie
-   „Save All”. VOSAN nie utworzy regionu automatycznie, dopóki to okno
-   jest otwarte.
+### Krok 2: Zainstaluj bibliotekę ReaImGui przez ReaPack
+1. W programie REAPER otwórz menu `Extensions` → `ReaPack` → `Browse packages`.
+2. Wpisz `ReaImGui` w polu wyszukiwania.
+3. Kliknij prawym przyciskiem myszy pakiet `ReaImGui: ReaScript binding for Dear ImGui` i wybierz `Install`.
+4. Kliknij przycisk `Apply` w prawym dolnym rogu okna.
+5. Zrestartuj program REAPER po zakończeniu instalacji.
 
-VOSAN nie wymaga żadnych innych zależności. Parser CSV, parser XLSX i
-wykrywanie nagrania działają na natywnym API REAPERa w czystym Lua.
+### Krok 3: Zainstaluj skrypt VOSAN
+1. Otwórz folder zasobów REAPERa (`Options` → `Show REAPER resource path in explorer/finder`).
+2. Skopiuj cały folder `VOSAN` do podfolderu `Scripts`.
+
+### Krok 4: Dodaj skrypt VOSAN do listy akcji
+1. W programie REAPER otwórz menu `Actions` → `Show action list...` (lub naciśnij klawisz `?`).
+2. Kliknij `New action` → `Load ReaScript...`.
+3. Przejdź do folderu `Scripts/VOSAN` i wybierz plik `VOSAN.lua`.
+4. (Opcjonalnie) Przypisz skrót klawiszowy do dodanej akcji `Script: VOSAN.lua`.
+
+### Krok 5: Skonfiguruj opcje nagrywania (Krok obowiązkowy)
+1. Otwórz okno preferencji: `Options` → `Preferences...` (skrót `Ctrl+P` lub `Cmd+,`).
+2. Przejdź do zakładki `Audio` → `Recording`.
+3. Odznacz opcję `Prompt to save/delete/rename new files: on stop`.
+4. Kliknij `Apply`, a następnie `OK`.
+
+> **Uwaga:** Ten krok jest obowiązkowy. Jeśli ta opcja jest włączona, REAPER wyświetli okno po każdym nagraniu. Okno blokuje skrypt VOSAN i uniemożliwia automatyczne tworzenie regionu.
+
+### Krok 6: Ustaw tryb HiDPI dla interfejsu (Krok obowiązkowy)
+Prawidłowe wyświetlanie okna ReaImGui wymaga włączenia odpowiedniego trybu HiDPI.
+1. Otwórz okno preferencji: `Options` → `Preferences...` (skrót `Ctrl+P` lub `Cmd+,`).
+2. Przejdź do zakładki `General`.
+3. Kliknij przycisk `Advanced UI/system settings...`.
+4. Ustaw pole `HiDPI mode` na `Multimonitor aware v2 (experimental)`.
+5. Kliknij `OK` w oknie ustawień zaawansowanych.
+6. Kliknij `Apply`, a następnie `OK` w oknie preferencji.
+7. Zrestartuj program REAPER.
+
+VOSAN nie wymaga innych zewnętrznych bibliotek. Parser CSV, parser XLSX oraz obsługa nagrywania działają w natywnym API REAPERa.
 
 ## Użycie
 
-1. Uruchom akcję VOSAN. Otworzy się okno VOSAN.
-2. Kliknij „Wczytaj plik (CSV / XLSX)...”. Wskaż plik ze skryptem
-   dubbingowym.
-3. Kliknij wiersz z kwestią, którą aktor zaraz nagra. Wiersz podświetli
-   się w tabeli. Treść kwestii pojawi się pogrubioną, większą czcionką w
-   panelu „Teraz nagrywasz” na górze okna. Patrz tylko na ten panel
-   podczas nagrywania.
-4. Nagraj kwestię normalnym transportem REAPERa (spacja, R, albo
-   przycisk Record). Zatrzymaj nagranie.
-5. VOSAN wykryje koniec nagrania automatycznie. VOSAN utworzy region
-   wokół nagrania. VOSAN nada regionowi nazwę wybranej kwestii.
-6. VOSAN zaznaczy kolejną kwestię z listy automatycznie, jeśli checkbox
-   „Auto-przejście do następnej kwestii po nagraniu” jest zaznaczony
-   (domyślne ustawienie). Nagrywaj kolejną kwestię bez klikania w oknie
-   VOSAN.
-7. VOSAN przesunie kursor edycji na koniec nagrania automatycznie, jeśli
-   checkbox „Przesuń kursor na koniec nagrania automatycznie” jest
-   zaznaczony (domyślne ustawienie). Pole „Odstęp po nagraniu (s)”
-   ustala, o ile sekund dalej za koniec nagrania trafi kursor (domyślnie
-   0,5 s). Dzięki temu realizator albo aktor może od razu nacisnąć
-   Record na kolejną kwestię, bez ręcznego przesuwania kursora na
-   timeline’ie.
+### Podstawowa obsługa nagrywania
 
-### Retake (powtórka nagrania)
+1. Uruchom akcję `Script: VOSAN.lua` z listy akcji. Otworzy się okno skryptu VOSAN.
+2. Kliknij przycisk „Wczytaj plik (CSV / XLSX)...”. Wybierz plik ze skryptem dubbingowym.
+3. Kliknij wiersz z kwestią do nagrania. Wiersz podświetli się na pomarańczowo.
+4. Sprawdź treść w panelu „Teraz nagrywasz” na górze okna.
+5. Rozpocznij nagrywanie w programie REAPER (przycisk Record lub klawisz R).
+6. Zakończ nagrywanie w programie REAPER (przycisk Stop lub Spacja).
+7. Skrypt VOSAN automatycznie wykryje koniec nagrania, utworzy region i nada mu nazwę wybranej kwestii.
 
-Zaznacz tę samą kwestię ponownie. Nagraj ją jeszcze raz. VOSAN usunie
-stary region o tej nazwie. VOSAN utworzy nowy region w to miejsce. W
-projekcie istnieje zawsze tylko jedna, najnowsza wersja każdej kwestii.
+### Funkcje automatyzacji
 
-Zielony wiersz w tabeli oznacza kwestię z istniejącym regionem
-(nagraną). Kolor pomarańczowy oznacza aktualnie wybraną kwestię.
+- **Auto-przejście:** Jeśli opcja „Auto-przejście do następnej kwestii po nagraniu” jest zaznaczona (ustawienie domyślne), VOSAN automatycznie zaznaczy kolejną kwestię z listy.
+- **Automatyczne przesuwanie kursora:** Jeśli opcja „Przesuń kursor na koniec nagrania automatycznie” jest zaznaczona (ustawienie domyślne), VOSAN przesunie kursor edycji za nagrany obiekt. Pole „Odstęp po nagraniu (s)” określa odległość kursora od końca nagrania (domyślnie 0.5 s).
+
+### Powtórka nagrania (Retake)
+
+Aby nagrać kwestię ponownie:
+1. Zaznacz tę samą kwestię na liście.
+2. Nagraj nowe ujęcie.
+3. VOSAN usunie poprzedni region o tej samej nazwie i utworzy nowy region w miejscu nowego nagrania.
+
+W projekcie zawsze pozostaje tylko jedna, najnowsza wersja danej kwestii.
+
+Oznaczenia kolorów w tabeli:
+- **Pomarańczowy:** Aktualnie wybrana kwestia.
+- **Zielony:** Kwestia z nagranym regionem.
+- **Niebieski:** Kwestia wybranej postaci oczekująca na nagranie.
+- **Szary:** Kwestia drugiej postaci (kontekst rozmowy).
 
 ### Kwestie głównego bohatera (MC) i pozostałych postaci
 
-Niektóre arkusze zawierają kwestie dwóch postaci naraz: głównego
-bohatera (MC) i drugiej postaci, której arkusz dotyczy. Powodem jest
-zachowanie kontekstu rozmowy. Realizator nagrywa jedną postać na raz z
-tego samego arkusza.
+Skrypt VOSAN automatycznie wykrywa tryb dwóch postaci, jeśli plik zawiera kolumnę `MC` z wartościami `Tak` lub `Nie`.
 
-VOSAN rozpoznaje ten przypadek automatycznie. Warunek: plik ma kolumnę o
-nazwie „MC” z wartościami „Tak” albo „Nie”. Jeśli ten warunek jest
-spełniony, w oknie VOSAN pojawi się dodatkowy checkbox „Czy nagrywamy
-głównego bohatera (MC)?”.
+Gdy plik zawiera kolumnę `MC`, w oknie pojawi się opcja „Czy nagrywamy głównego bohatera (MC)?”.
 
-- Checkbox odznaczony (domyślne ustawienie): VOSAN pomija kwestie MC
-  przy auto-przejściu. VOSAN zatrzymuje się tylko na kwestiach z
-  wartością „Nie” w kolumnie MC.
-- Checkbox zaznaczony: VOSAN pomija kwestie pozostałych postaci przy
-  auto-przejściu. VOSAN zatrzymuje się tylko na kwestiach z wartością
-  „Tak” w kolumnie MC.
+- **Opcja odznaczona (domyślnie):** VOSAN pomija kwestie z wartością `Tak` podczas auto-przejścia.
+- **Opcja zaznaczona:** VOSAN pomija kwestie z wartością `Nie` podczas auto-przejścia.
 
-Tabela pokazuje wszystkie kwestie przez cały czas, także te, które nie
-należą do aktualnie nagrywanej postaci. Powodem jest zachowanie
-kontekstu rozmowy dla aktora. Kolor wiersza pokazuje status kwestii:
-
-1. Pomarańczowy: aktualnie wybrana kwestia.
-2. Zielony: kwestia ma już nagrany region.
-3. Niebieski: kwestia należy do aktualnie nagrywanej postaci (zgodnie z
-   checkboxem) i czeka na nagranie.
-4. Szary: kwestia należy do drugiej postaci w arkuszu. Ta kwestia służy
-   tylko jako kontekst rozmowy.
-
-Realizator może kliknąć dowolny wiersz ręcznie, także szary. Checkbox
-wpływa tylko na auto-przejście i na kolory w tabeli.
+Możesz ręcznie wybrać dowolny wiersz z tabeli, niezależnie od ustawienia tej opcji.
 
 ### Ukrywanie kolumn
 
-Okno VOSAN pokazuje checkbox „Pokaż kolumny” z jedną pozycją dla każdej
-kolumny środkowej (na przykład „Plik źródłowy”, „MC”). Odznacz kolumnę,
-żeby ją ukryć. Ta zmiana upraszcza widok dla aktora.
+Możesz dostosować widok tabeli w oknie VOSAN:
+1. Rozwiń sekcję „Pokaż kolumny”.
+2. Odznacz checkbox obok nazwy kolumny środkowej, aby ją ukryć.
 
-Nazwa skryptu i tekst kwestii są widoczne zawsze. Te dwie kolumny nie
-mają checkboxa.
-
-Ukrycie kolumny „MC” zmienia tylko widok tabeli. Ukrycie kolumny „MC”
-nie wyłącza rozpoznawania głównego bohatera opisanego wyżej.
+Kolumny z nazwą skryptu oraz tekstem kwestii są widoczne zawsze.
 
 ### Brak wybranej kwestii
 
-VOSAN nie gubi żadnego nagrania. Jeśli nagranie zakończy się bez
-wybranej kwestii, VOSAN utworzy region z tymczasową nazwą
-`NIEPRZYPISANE_<data>_<godzina>`. VOSAN pokaże czerwone ostrzeżenie w
-oknie. Zmień nazwę tego regionu ręcznie w REAPERze.
+Jeśli nagrywanie zakończy się bez wybranej kwestii w tabeli:
+1. VOSAN utworzy region z nazwą tymczasową `NIEPRZYPISANE_<data>_<godzina>`.
+2. Okno skryptu wyświetli czerwony komunikat ostrzegawczy.
+3. Zmień nazwę utworzonego regionu ręcznie w programie REAPER.
 
-### Eksport
+### Eksport plików audio
 
-1. Otwórz File → Render...
-2. Ustaw źródło (Source) na „Regions”.
-3. Wpisz wildcard `@region_name` w polu nazwy pliku.
-4. Kliknij Render.
+1. Otwórz menu `File` → `Render...` (skrót `Ctrl+Alt+R` lub `Cmd+Option+R`).
+2. Ustaw pole `Source` na `Bounds: Project regions` lub `Regions`.
+3. Wpisz `@region_name` w polu `File name`.
+4. Kliknij przycisk `Render 1 file...` (lub `Render N files...`).
 
-## Ograniczenia
+## Ograniczenia skryptu
 
-- VOSAN wykrywa standardowy tryb nagrywania: pusta ścieżka, nowy item na
-  uzbrojonej ścieżce. VOSAN nie obsługuje trybu „tape” (nagrywanie w
-  istniejący item jako nowy take).
-- Import dużych plików XLSX może potrwać kilka do kilkunastu sekund.
-  Powodem jest dekompresja DEFLATE w czystym Lua, bez zewnętrznych
-  bibliotek. Użyj formatu CSV dla plików z wieloma tysiącami wierszy —
-  import CSV jest szybszy.
-- Wyszukiwanie w polu filtra ignoruje wielkość liter tylko dla znaków
-  ASCII. Polskie znaki diakrytyczne (ą, ć, ę, ó, ...) rozróżniają
-  wielkość liter. Powodem jest ograniczenie standardowej biblioteki Lua.
-- Region powstaje z dokładnym zakresem nagranego itemu. VOSAN nie dodaje
-  paddingu ani ciszy przed i po nagraniu.
+- **Tryb nagrywania:** VOSAN obsługuje standardowy tryb nagrywania (nowy obiekt na ścieżce). Skrypt nie obsługuje trybu nakładania ujęć (tzw. tryb *tape* / wiele ujęć w jednym obiekcie).
+- **Wydajność XLSX:** Import dużych plików XLSX może trwać kilkanaście sekund z powodu dekompresji w języku Lua. Dla plików zawierających wiele tysięcy wierszy zaleca się stosowanie formatu CSV.
+- **Filtrowanie tekstu:** Wyszukiwarka ignoruje wielkość liter tylko dla znaków z alfabetu łacińskiego (ASCII). Wyszukiwanie polskich znaków diakrytycznych rozróżnia wielkość liter.
+- **Długość regionu:** VOSAN tworzy region o długości dokładnie równej nagranemu obiektowi audio. Skrypt nie dodaje automatycznie marginesu ciszy przed obiektem ani po obiekcie.
