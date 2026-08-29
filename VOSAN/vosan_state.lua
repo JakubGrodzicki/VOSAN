@@ -39,6 +39,9 @@ function M.new()
                                -- (celowo NIE resetowane przy wczytaniu pliku - wybor ma przetrwac przeladowanie)
     mc_column_index = nil,    -- indeks w row.extras kolumny "MC", albo nil gdy plik jej nie ma
     recording_mc = false,     -- false = nagrywamy NPC (MC="Nie"), true = nagrywamy MC (MC="Tak")
+    character_col_index = nil, -- indeks w row.extras kolumny "plik zrodlowy"
+    available_characters = {}, -- lista unikalnych postaci z kolumny character_col_index ("Wszystkie" zawsze na poczatku)
+    current_character = "Wszystkie", -- nazwa wybranej postaci lub "Wszystkie"
     raw_rows = nil,           -- ostatnio sparsowana surowa siatka (do przeladowania przy zmianie skip_header)
     filter_text = "",
     filtered = {},
@@ -53,6 +56,7 @@ function M.new()
     post_record_gap_text = "0.50", -- bufor pola tekstowego dla powyzszej wartosci (patrz vosan_ui)
     duplicates = {},
     last_warning = nil,
+    last_info = nil,        -- komunikat informacyjny (np. podsumowanie przygotowanego renderu)
     recorded_count = 0,
     regions_dirty = true,
     _last_region_refresh = 0,
@@ -168,11 +172,47 @@ function M.load_rows(state, raw_rows, skip_header)
   state.recording_mc = false
 
   state.mc_column_index = nil
+  state.character_col_index = nil
+  state.available_characters = {"Wszystkie"}
+  state.current_character = "Wszystkie"
+  
   for i, label in ipairs(extra_labels) do
-    if label:lower() == MC_COLUMN_LABEL then
+    local l_lower = label:lower()
+    if l_lower == MC_COLUMN_LABEL then
       state.mc_column_index = i
-      break
+    elseif l_lower == "plik źródłowy" or l_lower == "plik zrodlowy" or l_lower == "postac" or l_lower == "postać" or l_lower == "character" then
+      state.character_col_index = i
     end
+  end
+
+  -- Fallback: jesli nie znaleziono kolumn po nazwach, uzywamy domyslnych indeksow
+  -- Zgodnie z formatem VOSAN: Kolumna 1 to nazwa skryptu.
+  -- Kolumna 2 (pierwsza kolumna dodatkowa, indeks 1 w extras) = Postac
+  -- Kolumna 3 (druga kolumna dodatkowa, indeks 2 w extras) = MC
+  if not state.character_col_index and #extra_labels >= 1 then
+    state.character_col_index = 1
+  end
+  
+  if not state.mc_column_index and #extra_labels >= 2 then
+    state.mc_column_index = 2
+  end
+
+  if state.character_col_index then
+    local char_set = {}
+    for _, r in ipairs(rows) do
+      local char_name = r.extras[state.character_col_index]
+      if char_name and char_name ~= "" then
+        char_set[char_name] = true
+      end
+    end
+    for c in pairs(char_set) do
+      table.insert(state.available_characters, c)
+    end
+    table.sort(state.available_characters, function(a, b)
+      if a == "Wszystkie" then return true end
+      if b == "Wszystkie" then return false end
+      return a < b
+    end)
   end
 
   state.selected = (#rows > 0) and 1 or nil
@@ -186,6 +226,15 @@ end
 --- (MC albo NPC, wg state.recording_mc). Jesli plik nie ma kolumny "MC",
 --- kazdy wiersz "pasuje" - funkcja MC/NPC jest wtedy nieaktywna.
 function M.row_matches_target(state, row)
+  -- Najpierw filtr postaci (plik zrodlowy)
+  if state.character_col_index and state.current_character ~= "Wszystkie" then
+    local char_val = row.extras[state.character_col_index] or ""
+    if char_val ~= state.current_character then
+      return false
+    end
+  end
+
+  -- Potem logika MC
   if not state.mc_column_index then return true end
   local val = (row.extras[state.mc_column_index] or ""):lower()
   local is_mc = (val == MC_TRUE_VALUE)

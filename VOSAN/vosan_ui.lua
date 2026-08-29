@@ -179,7 +179,110 @@ local function draw_now_recording_panel(ctx, state)
     end
   end
 
+  if state.last_info then
+    reaper.ImGui_Separator(ctx)
+    colored_text(ctx, COLOR_DIM, state.last_info)
+    if reaper.ImGui_Button(ctx, "OK##dismiss_info") then
+      state.last_info = nil
+    end
+  end
+
   reaper.ImGui_Separator(ctx)
+end
+
+-- === Render wsadowy kwestii jednej postaci =================================
+-- REAPER daje dwa sposoby na "wyrenderuj tylko te regiony":
+--   1) Bounds "Selected regions" na zaznaczonych regionach - Source zostaje
+--      "Master mix", czyli okno renderu wyglada dokladnie tak, jak po recznym
+--      ustawieniu z README. Zaznaczanie regionow ZE SKRYPTU wymaga jednak
+--      REAPERa 7.62+ (wczesniej nie ma pola B_UISEL w API).
+--   2) Region Render Matrix - dziala w kazdej wersji, ale przestawia Source na
+--      "Region render matrix" i zostawia w projekcie trwaly slad (wpisy macierzy).
+-- Probujemy (1); gdy API nie ma albo zaznaczanie zawiedzie, schodzimy do (2).
+--
+-- UWAGA: ponizsze liczby to kody/bity z GetSetProjectInfo, NIE numery pozycji w
+-- rozwijanej liscie okna renderu. RENDER_SETTINGS odpowiada polu "Source", a
+-- RENDER_BOUNDSFLAG polu "Bounds" - to dwa rozne klucze i pomylenie ich
+-- przestawia zupelnie inny parametr renderu.
+local RENDER_SOURCE_MASTER_MIX    = 0 -- RENDER_SETTINGS: &(1|2)==0
+local RENDER_SOURCE_REGION_MATRIX = 8 -- RENDER_SETTINGS: &8 = use render matrix
+local RENDER_BOUNDS_ALL_REGIONS      = 3
+local RENDER_BOUNDS_SELECTED_REGIONS = 5
+local RENDER_SRATE = 48000 -- Hz
+local RENDER_CHANNELS = 1  -- mono
+
+--- Zbior nazw regionow ({[nazwa]=true}) juz nagranych kwestii wybranej postaci
+--- oraz ich liczba.
+local function collect_character_regions(state)
+  local names, count = {}, 0
+  for _, r in ipairs(state.rows) do
+    if r.recorded and r.script_name_safe ~= ""
+      and r.extras[state.character_col_index] == state.current_character
+      and not names[r.script_name_safe] then
+      names[r.script_name_safe] = true
+      count = count + 1
+    end
+  end
+  return names, count
+end
+
+--- Ustawia parametry renderu projektu pod kwestie wybranej postaci i otwiera
+--- okno renderu. Aktorowi zostaje wtedy tylko klikniecie "Render N files...".
+local function prepare_character_render(state)
+  local names, count = collect_character_regions(state)
+
+  -- Bez tego zabezpieczenia render moglby objac CALY projekt: przy pustym
+  -- zaznaczeniu regionow REAPER renderuje wszystkie regiony, a pusta macierz
+  -- zostawia render przy pozostalych ustawieniach projektu.
+  if count == 0 then
+    state.last_info = nil
+    state.last_warning = "Postac '" .. state.current_character ..
+      "' nie ma jeszcze nagranych kwestii - nie ma czego renderowac."
+    return
+  end
+
+  local used_selection = false
+  if regions.has_region_selection_api() then
+    local ok, selected = pcall(regions.select_regions_by_name, names)
+    used_selection = ok and type(selected) == "number" and selected > 0
+  end
+
+  if used_selection then
+    reaper.GetSetProjectInfo(0, "RENDER_SETTINGS", RENDER_SOURCE_MASTER_MIX, true)
+    reaper.GetSetProjectInfo(0, "RENDER_BOUNDSFLAG", RENDER_BOUNDS_SELECTED_REGIONS, true)
+  else
+    regions.prepare_render_matrix(names)
+    reaper.GetSetProjectInfo(0, "RENDER_SETTINGS", RENDER_SOURCE_REGION_MATRIX, true)
+    reaper.GetSetProjectInfo(0, "RENDER_BOUNDSFLAG", RENDER_BOUNDS_ALL_REGIONS, true)
+  end
+
+  local path
+  if reaper.GetOS():match("^Win") then
+    path = os.getenv("USERPROFILE") .. "\\Desktop\\Nagrania\\" .. state.current_character
+  else
+    path = os.getenv("HOME") .. "/Desktop/Nagrania/" .. state.current_character
+  end
+  reaper.GetSetProjectInfo_String(0, "RENDER_FILE", path, true)
+  reaper.GetSetProjectInfo_String(0, "RENDER_PATTERN", "$region", true)
+
+  -- Parametry, ktore aktor musialby inaczej ustawic recznie w oknie renderu.
+  -- Samego FORMATU (WAV / bit depth) VOSAN nie dotyka - to zakodowany blob
+  -- konfiguracji, wiec zostaje taki, jak w domyslnych ustawieniach projektu.
+  reaper.GetSetProjectInfo(0, "RENDER_SRATE", RENDER_SRATE, true)
+  reaper.GetSetProjectInfo(0, "RENDER_CHANNELS", RENDER_CHANNELS, true)
+  reaper.GetSetProjectInfo(0, "RENDER_ADDTOPROJ", 0, true) -- nie wciagaj gotowych plikow z powrotem do projektu
+
+  state.last_warning = nil
+  state.last_info = string.format(
+    "Przygotowano render %d kwestii postaci '%s' do folderu:\n%s\n%s",
+    count, state.current_character, path,
+    used_selection
+      and "W oknie renderu: Source = Master mix, Bounds = Selected regions."
+      or ("Ta wersja REAPERa nie pozwala zaznaczyc regionow ze skryptu " ..
+          "(potrzebna 7.62 lub nowsza) - VOSAN uzyl Region Render Matrix. " ..
+          "W oknie renderu: Source = Region render matrix."))
+
+  reaper.Main_OnCommand(40015, 0) -- File: Render project...
 end
 
 local function draw_search_controls(ctx, state)
@@ -203,9 +306,36 @@ local function draw_search_controls(ctx, state)
   end
 
   if state.mc_column_index then
-    reaper.ImGui_SameLine(ctx)
+    -- Usunięto SameLine(), zeby okno "Czy nagrywamy MC" bylo lepiej widoczne i nie ucinalo sie
     local ch3, v3 = reaper.ImGui_Checkbox(ctx, "Czy nagrywamy glownego bohatera (MC)?", state.recording_mc)
     if ch3 then state.recording_mc = v3 end
+  end
+
+  if state.character_col_index and state.available_characters and #state.available_characters > 0 then
+    reaper.ImGui_SetNextItemWidth(ctx, 300)
+    if reaper.ImGui_BeginCombo(ctx, "Postać (Plik źródłowy)", state.current_character) then
+      for _, char_name in ipairs(state.available_characters) do
+        local is_selected = (state.current_character == char_name)
+        if reaper.ImGui_Selectable(ctx, char_name, is_selected) then
+          state.current_character = char_name
+          -- Zmiana wybranej postaci nie filtruje samej listy ukrywajac wiersze,
+          -- tylko zmienia ich 'target' status w row_matches_target (kolory/auto-przejscie).
+          -- Jednak wyszukiwarka dziala po `search_blob`, a my nie chcemy ukrywac kontekstu.
+          -- Aby zaktualizowac kolory w locie: nic specjalnego nie musimy wolac, tabela odswiezy to.
+        end
+        if is_selected then
+          reaper.ImGui_SetItemDefaultFocus(ctx)
+        end
+      end
+      reaper.ImGui_EndCombo(ctx)
+    end
+    
+    if state.current_character ~= "Wszystkie" then
+      reaper.ImGui_SameLine(ctx)
+      if reaper.ImGui_Button(ctx, "Wyrenderuj nagrania tej postaci") then
+        prepare_character_render(state)
+      end
+    end
   end
 
   local ch4, v4 = reaper.ImGui_Checkbox(ctx, "Przesun kursor na koniec nagrania automatycznie", state.auto_move_cursor)

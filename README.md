@@ -10,7 +10,7 @@ Proces pracy:
 5. VOSAN utworzy region wokół nagranego obiektu.
 6. VOSAN nada regionowi nazwę wybranej kwestii.
 
-Po zakończonej sesji wyeksportuj pliki audio (menu Render, źródło Regions, nazwa `@region_name`).
+Po zakończonej sesji wyeksportuj pliki audio. Przycisk „Wyrenderuj nagrania tej postaci” przygotuje render wsadowy jednym kliknięciem.
 
 ## Format pliku wejściowego
 
@@ -41,6 +41,10 @@ Pierwszy wiersz pliku może zawierać nagłówki kolumn. Jeśli plik posiada nag
 ## Instalacja
 
 Wykonaj poniższe kroki na każdym komputerze, na którym uruchamiasz VOSAN.
+
+> **Wymagana wersja programu REAPER:** funkcja „Wyrenderuj nagrania tej postaci” wymaga REAPERa **7.62 lub nowszego**. Ta wersja pozwala skryptowi zaznaczyć regiony. VOSAN otwiera wtedy okno renderowania z wartościami `Source: Master mix` oraz `Bounds: Selected regions`.
+>
+> Starszy REAPER nie ma tej funkcji. VOSAN używa wtedy zamiennika o nazwie Region Render Matrix. Wynik renderowania jest ten sam. Okno renderowania pokazuje wtedy wartość `Source: Region render matrix`. Pozostałe funkcje skryptu nie zależą od wersji programu.
 
 ### Krok 1: Zainstaluj wtyczkę ReaPack (Wymagane)
 Aplikacja wymaga wtyczki ReaPack do instalacji i obsługi biblioteki ReaImGui.
@@ -85,6 +89,16 @@ Prawidłowe wyświetlanie okna ReaImGui wymaga włączenia odpowiedniego trybu H
 6. Kliknij `Apply`, a następnie `OK` w oknie preferencji.
 7. Zrestartuj program REAPER.
 
+### Aktualizacja skryptu do nowszej wersji
+
+REAPER uruchamia kopię skryptu z folderu zasobów. Zmiana plików w innym folderze nie ma wpływu na działanie skryptu.
+
+1. Skopiuj nowe pliki `.lua` do podfolderu `Scripts/VOSAN` w folderze zasobów REAPERa.
+2. Zamknij okno VOSAN.
+3. Uruchom akcję `Script: VOSAN.lua` ponownie.
+
+> **Uwaga:** krok 3 jest obowiązkowy. REAPER trzyma wczytany skrypt w pamięci. Nowe pliki zaczynają działać dopiero po ponownym uruchomieniu akcji.
+
 VOSAN nie wymaga innych zewnętrznych bibliotek. Parser CSV, parser XLSX oraz obsługa nagrywania działają w natywnym API REAPERa.
 
 ## Użycie
@@ -119,16 +133,15 @@ Oznaczenia kolorów w tabeli:
 - **Niebieski:** Kwestia wybranej postaci oczekująca na nagranie.
 - **Szary:** Kwestia drugiej postaci (kontekst rozmowy).
 
-### Kwestie głównego bohatera (MC) i pozostałych postaci
+### Kwestie głównego bohatera (MC) i filtrowanie postaci
 
-Skrypt VOSAN automatycznie wykrywa tryb dwóch postaci, jeśli plik zawiera kolumnę `MC` z wartościami `Tak` lub `Nie`.
+Skrypt VOSAN automatycznie wykrywa tryb wielu postaci, jeśli plik zawiera kolumnę określającą postać (np. `plik źródłowy`, `plik zrodlowy`, `postac`, `character`).
 
-Gdy plik zawiera kolumnę `MC`, w oknie pojawi się opcja „Czy nagrywamy głównego bohatera (MC)?”.
+- Możesz zawęzić listę i widok do konkretnej postaci. Wybierz postać z rozwijanej listy **Postać (Plik źródłowy)**.
+- VOSAN podświetli kwestie tej postaci na niebiesko. Kwestie innych postaci pozostaną szare. Służą one jako kontekst.
 
-- **Opcja odznaczona (domyślnie):** VOSAN pomija kwestie z wartością `Tak` podczas auto-przejścia.
-- **Opcja zaznaczona:** VOSAN pomija kwestie z wartością `Nie` podczas auto-przejścia.
-
-Możesz ręcznie wybrać dowolny wiersz z tabeli, niezależnie od ustawienia tej opcji.
+Dodatkowo, jeśli plik zawiera kolumnę `MC` (wartości `Tak` lub `Nie`), skrypt zapyta Cię „Czy nagrywamy głównego bohatera (MC)?”.
+- Opcje te nie wykluczają się. Możesz filtrować po nazwie pliku źródłowego (postaci) i dodatkowo zdecydować, czy jesteś MC, czy NPC.
 
 ### Ukrywanie kolumn
 
@@ -145,16 +158,63 @@ Jeśli nagrywanie zakończy się bez wybranej kwestii w tabeli:
 2. Okno skryptu wyświetli czerwony komunikat ostrzegawczy.
 3. Zmień nazwę utworzonego regionu ręcznie w programie REAPER.
 
-### Eksport plików audio
+## Eksport plików audio i renderowanie
 
-1. Otwórz menu `File` → `Render...` (skrót `Ctrl+Alt+R` lub `Cmd+Option+R`).
-2. Ustaw pole `Source` na `Bounds: Project regions` lub `Regions`.
-3. Wpisz `@region_name` w polu `File name`.
-4. Kliknij przycisk `Render 1 file...` (lub `Render N files...`).
+VOSAN przygotowuje render wsadowy kwestii wybranej postaci. Skrypt ustawia te parametry samodzielnie:
+
+- ścieżka zapisu: Pulpit, folder `Nagrania/Nazwa_Postaci`,
+- wzorzec nazwy pliku: `$region`,
+- zakres renderowania: tylko nagrane kwestie wybranej postaci,
+- częstotliwość próbkowania: `48000` Hz,
+- liczba kanałów: `Mono`,
+- dodawanie gotowych plików do projektu: wyłączone.
+
+VOSAN nie zmienia formatu pliku. VOSAN nie zmienia opcji `Normalize/Limit`. Te ustawienia należą do Ciebie. Ustaw je raz ręcznie.
+
+### Ustaw format pliku jako domyślny (Krok jednorazowy)
+
+1. Otwórz menu `File` → `Render...`.
+2. Ustaw opcję `Resample mode` na `r8brain free`.
+3. Odznacz opcję `Normalize/Limit`.
+4. W sekcji `Output format` ustaw opcję `Format` na `WAV`.
+5. Ustaw opcję `WAV bit depth` na `24 bit PCM`.
+6. Kliknij przycisk `Save changes and close` (Zapisz zmiany i zamknij okno renderowania).
+7. Otwórz menu `File` → `Project settings...`.
+8. Kliknij przycisk `Save as default project settings`.
+9. Kliknij przycisk `OK`.
+
+### Szybki eksport z VOSAN (Zalecane)
+
+Użyj tej metody, gdy Twój plik skryptu ma kolumnę postaci (np. `plik źródłowy`).
+
+1. Wybierz postać z rozwijanej listy `Postać (Plik źródłowy)` w oknie VOSAN.
+2. Nagraj kwestie tej postaci.
+3. Kliknij przycisk `Wyrenderuj nagrania tej postaci`.
+4. Sprawdź pole `Source` w oknie `Render to File`. Pole ma wartość `Master mix`.
+5. Sprawdź pole `Bounds`. Pole ma wartość `Selected regions`.
+6. Kliknij przycisk `Render N files...`.
+
+VOSAN otwiera okno renderowania automatycznie. Skrypt pokazuje też podsumowanie w swoim oknie. Podsumowanie podaje liczbę kwestii, folder docelowy oraz użyty tryb.
+
+Pliki otrzymują nazwy z pierwszej kolumny arkusza.
+
+W REAPERze starszym niż 7.62 pole `Source` ma wartość `Region render matrix`. To jest prawidłowe. Wynik renderowania jest ten sam.
+
+> **Uwaga:** VOSAN nie otwiera okna renderowania, gdy wybrana postać nie ma nagranej kwestii. Skrypt pokazuje ostrzeżenie. To zabezpieczenie jest celowe. REAPER przy pustym wyborze renderuje wszystkie regiony projektu.
+
+### Ręczny eksport (Dla plików bez postaci)
+
+Użyj tej metody, gdy Twój arkusz nie ma kolumny postaci.
+
+1. Otwórz menu `File` → `Render...`.
+2. Ustaw pole `Source` na `Master mix`.
+3. Ustaw pole `Bounds` na `All project regions`.
+4. Wpisz `$region` w polu `File name`.
+5. Kliknij przycisk `Render N files...`.
 
 ## Ograniczenia skryptu
 
 - **Tryb nagrywania:** VOSAN obsługuje standardowy tryb nagrywania (nowy obiekt na ścieżce). Skrypt nie obsługuje trybu nakładania ujęć (tzw. tryb *tape* / wiele ujęć w jednym obiekcie).
-- **Wydajność XLSX:** Import dużych plików XLSX może trwać kilkanaście sekund z powodu dekompresji w języku Lua. Dla plików zawierających wiele tysięcy wierszy zaleca się stosowanie formatu CSV.
+- **Wydajność XLSX:** Import dużych plików XLSX może trwać kilkanaście sekund z powodu dekompresji w języku Lua. Dla plików zawierających wiele tysięcy wierszy użyj formatu CSV.
 - **Filtrowanie tekstu:** Wyszukiwarka ignoruje wielkość liter tylko dla znaków z alfabetu łacińskiego (ASCII). Wyszukiwanie polskich znaków diakrytycznych rozróżnia wielkość liter.
 - **Długość regionu:** VOSAN tworzy region o długości dokładnie równej nagranemu obiektowi audio. Skrypt nie dodaje automatycznie marginesu ciszy przed obiektem ani po obiekcie.
