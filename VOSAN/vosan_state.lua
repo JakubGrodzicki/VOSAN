@@ -217,6 +217,16 @@ function M.load_rows(state, raw_rows, skip_header)
     end)
   end
 
+  -- Prekalkulacja flagi MC. row_matches_target jest wolane dla KAZDEGO wiersza
+  -- przy kazdym przeliczeniu licznikow (czyli co sekunde, przy odswiezeniu
+  -- regionow); lowercase w tamtej petli to przy 60 tys. kwestii 60 tys.
+  -- alokacji stringow na sekunde. Tutaj robimy to raz.
+  if state.mc_column_index then
+    for _, row in ipairs(rows) do
+      row.is_mc = ((row.extras[state.mc_column_index] or ""):lower() == MC_TRUE_VALUE)
+    end
+  end
+
   state.selected = (#rows > 0) and 1 or nil
   state.duplicates = M.find_duplicates(rows)
   state.regions_dirty = true
@@ -237,11 +247,10 @@ function M.row_matches_target(state, row)
     end
   end
 
-  -- Potem logika MC
+  -- Potem logika MC. row.is_mc jest wyliczone raz, przy wczytaniu pliku
+  -- (patrz load_rows) - ta funkcja siedzi w petli po wszystkich wierszach.
   if not state.mc_column_index then return true end
-  local val = (row.extras[state.mc_column_index] or ""):lower()
-  local is_mc = (val == MC_TRUE_VALUE)
-  return state.recording_mc == is_mc
+  return state.recording_mc == (row.is_mc == true)
 end
 
 function M.find_duplicates(rows)
@@ -263,22 +272,70 @@ end
 
 --- Szuka w prekalkulowanym row.search_blob (patrz load_rows) zamiast zamieniac
 --- kazde pole na male litery przy kazdym wywolaniu.
+---
+--- Wybor postaci ZAWEZA liste, ale tylko po pliku zrodlowym - obie strony
+--- rozmowy z tego pliku (i MC, i NPC) zostaja widoczne, bo kwestie drugiej
+--- strony sa kontekstem dla nagrywanej. Przelacznik MC/NPC celowo NIE ukrywa
+--- wierszy, tylko zmienia ich status (kolor, auto-przejscie, liczniki) - to
+--- rozroznienie jest calym sednem: bez niego arkusz na 60 tys. kwestii trzeba
+--- bylo przewijac w poszukiwaniu 69 kwestii jednej postaci.
 function M.refresh_filter(state)
   local q = (state.filter_text or ""):lower()
   local rows = state.rows
   local filtered = {}
-  if q == "" then
+
+  local char_i = state.character_col_index
+  local char_want = state.current_character
+  local by_char = char_i ~= nil and char_want ~= nil and char_want ~= "Wszystkie"
+
+  -- Brak jakiegokolwiek zawezenia - przepisujemy indeksy bez sprawdzania.
+  if not by_char and q == "" then
     for i = 1, #rows do filtered[i] = i end
-  else
-    local n = 0
-    for i = 1, #rows do
-      if rows[i].search_blob:find(q, 1, true) then
-        n = n + 1
-        filtered[n] = i
-      end
+    state.filtered = filtered
+    return
+  end
+
+  local n = 0
+  for i = 1, #rows do
+    local row = rows[i]
+    local keep = true
+    if by_char and (row.extras[char_i] or "") ~= char_want then
+      keep = false
+    end
+    if keep and q ~= "" and not row.search_blob:find(q, 1, true) then
+      keep = false
+    end
+    if keep then
+      n = n + 1
+      filtered[n] = i
     end
   end
+
   state.filtered = filtered
+end
+
+--- Pilnuje, zeby wybrana kwestia byla na widocznej liscie. Po zawezeniu do
+--- jednej postaci wybor prawie zawsze wypada poza filtr, a wtedy panel "Teraz
+--- nagrywasz" pokazywalby kwestie, ktorej w tabeli nie widac. Przenosimy wybor
+--- na pierwsza kwestie pasujaca do nagrywanego zakresu (MC albo NPC), a gdy
+--- takiej nie ma - na pierwsza widoczna w ogole.
+function M.ensure_selection_visible(state)
+  local sel = state.selected
+  if sel then
+    for _, idx in ipairs(state.filtered) do
+      if idx == sel then return end
+    end
+  end
+
+  for _, idx in ipairs(state.filtered) do
+    local row = state.rows[idx]
+    if row and M.row_matches_target(state, row) then
+      state.selected = idx
+      return
+    end
+  end
+
+  state.selected = state.filtered[1]
 end
 
 function M.select_row(state, idx)

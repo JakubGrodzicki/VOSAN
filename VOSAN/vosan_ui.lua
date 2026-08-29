@@ -832,11 +832,15 @@ local function draw_filter_controls(ctx, state, dl)
         local is_selected = (state.current_character == char_name)
         if reaper.ImGui_Selectable(ctx, char_name, is_selected) then
           state.current_character = char_name
+          -- Zawezenie listy do pliku zrodlowego tej postaci - patrz
+          -- vosan_state.refresh_filter. Kwestie drugiej strony rozmowy z tego
+          -- samego pliku zostaja widoczne jako kontekst.
+          vosan_state.refresh_filter(state)
+          vosan_state.ensure_selection_visible(state)
           vosan_state.refresh_target_counts(state)
-          -- Zmiana wybranej postaci nie filtruje samej listy ukrywajac wiersze,
-          -- tylko zmienia ich 'target' status w row_matches_target (kolory/auto-przejscie).
-          -- Jednak wyszukiwarka dziala po `search_blob`, a my nie chcemy ukrywac kontekstu.
-          -- Aby zaktualizowac kolory w locie: nic specjalnego nie musimy wolac, tabela odswiezy to.
+          -- Pozycje wierszy sie zmienily, wiec auto-przewijanie musi dojechac
+          -- do wyboru na nowo.
+          state._scrolled_to = nil
         end
         if is_selected then
           reaper.ImGui_SetItemDefaultFocus(ctx)
