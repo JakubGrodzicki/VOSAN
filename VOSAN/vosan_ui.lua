@@ -1,10 +1,11 @@
 -- vosan_ui.lua
--- Okno ReaImGui: pasek pliku z postepem, panel "Teraz nagrywasz" obok kolumny
--- ustawien sesji, pasek roboczy (szukaj / postac / render) i tabela kwestii
--- (wirtualizowana ListClipperem, wiec dziala plynnie nawet przy tysiacach
--- wierszy). Zaprojektowane tak, zeby podczas wlasciwego nagrywania realizator
--- nie musial nic klikac poza wyborem kolejnej kwestii - patrz panel "Teraz
--- nagrywasz" i auto-przejscie po nagraniu.
+-- Okno ReaImGui, od gory: pasek pliku z postepem, panel "Teraz nagrywasz" na
+-- cala szerokosc, poziomy pasek ustawien sesji, pasek roboczy (szukaj /
+-- postac / render) i tabela kwestii (wirtualizowana ListClipperem, wiec
+-- dziala plynnie nawet przy tysiacach wierszy). Zaprojektowane tak, zeby
+-- podczas wlasciwego nagrywania realizator nie musial nic klikac poza wyborem
+-- kolejnej kwestii - patrz panel "Teraz nagrywasz" i auto-przejscie po
+-- nagraniu.
 --
 -- Tabela ma DYNAMICZNA liczbe kolumn: pierwsza to waski pasek statusu, druga
 -- zawsze nazwa skryptu, ostatnia zawsze tresc kwestii, a miedzy nimi dowolna
@@ -66,8 +67,6 @@ local BTN_PRIM_HOV = 0x4287C9FF
 
 local REGION_REFRESH_INTERVAL = 1.0 -- sekundy
 
-local SETTINGS_COL_W = 400 -- szerokosc kolumny ustawien w strefie gornej
-
 -- === Czcionka dla tresci kwestii w panelu "Teraz nagrywasz" =================
 -- CreateFont/PushFont zmienily sygnature miedzy ReaImGui <0.10 i >=0.10 (patrz
 -- SetWindowFontScale - ktore w ogole nie istnieje w niektorych wersjach - to
@@ -116,6 +115,21 @@ local function colored_label(ctx, color, text)
   reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), color)
   reaper.ImGui_Text(ctx, text)
   reaper.ImGui_PopStyleColor(ctx)
+end
+
+--- Wysokosc JEDNEJ linii czcionki panelu kwestii. Sluzy do zarezerwowania
+--- stalego minimum wysokosci panelu - patrz draw_now_recording_panel.
+local function cue_line_height(ctx)
+  local pushed = false
+  if push_big_font then
+    pushed = pcall(push_big_font, ctx)
+  end
+  local ok, h = pcall(reaper.ImGui_GetTextLineHeight, ctx)
+  if pushed then
+    pcall(reaper.ImGui_PopFont, ctx)
+  end
+  if ok and h then return h end
+  return nil
 end
 
 --- Rysuje tekst pogrubiona, wieksza czcionka, jesli udalo sie ja zaladowac
@@ -194,7 +208,10 @@ local function push_theme_vars(ctx)
   var(reaper.ImGui_StyleVar_WindowPadding, 12, 12)
   var(reaper.ImGui_StyleVar_ItemSpacing, 8, 8)
   var(reaper.ImGui_StyleVar_FramePadding, 8, 5)
-  var(reaper.ImGui_StyleVar_CellPadding, 10, 7)
+  -- Poziomo 6, a nie 10: przy 10 sama kolumna kropki statusu nie zeszlaby
+  -- ponizej 20 px swiatla na padding, a chcemy ja miec tak waska, jak sie da.
+  -- Pionowe 7 zostaje - to ono daje wierszowi tabeli oddech.
+  var(reaper.ImGui_StyleVar_CellPadding, 6, 7)
   var(reaper.ImGui_StyleVar_FrameRounding, 3)
   var(reaper.ImGui_StyleVar_ScrollbarRounding, 3)
 
@@ -238,9 +255,11 @@ local function status_dot(ctx, dl, color)
   local ok_h, line_h = pcall(reaper.ImGui_GetTextLineHeight, ctx)
   if ok_h and line_h then h = line_h end
   if dl and color then
-    pcall(reaper.ImGui_DrawList_AddCircleFilled, dl, x + 5, y + h * 0.5, 4, color)
+    pcall(reaper.ImGui_DrawList_AddCircleFilled, dl, x + 4, y + h * 0.5, 4, color)
   end
-  reaper.ImGui_Dummy(ctx, 10, h)
+  -- Kropka o srednicy 8 px zajmuje dokladnie tyle miejsca, ile rysuje - kazdy
+  -- nadmiar tutaj to piksele odebrane kolumnie z nazwa postaci.
+  reaper.ImGui_Dummy(ctx, 8, h)
 end
 
 --- Przesuwa kursor tak, zeby blok o szerokosci `block_w` zmiescil sie przy
@@ -433,7 +452,21 @@ local function draw_now_recording_panel(ctx, state, dl)
       colored_label(ctx, COLOR_TARGET, "[ DO NAGRANIA ]")
     end
 
+    -- Panel zajmuje cala szerokosc okna, wiec wiekszosc kwestii miesci sie w
+    -- jednej linii, a dluzsze w dwoch. Bez rezerwacji minimum panel kurczylby
+    -- sie i rosl przy kazdym auto-przejsciu, a razem z nim skakalaby cala
+    -- tabela ponizej - i to w trakcie nagrywania, kiedy aktor na nia patrzy.
+    local _, y_before = reaper.ImGui_GetCursorScreenPos(ctx)
     draw_bold_big(ctx, TXT_CUE, row.text ~= "" and row.text or "(brak tresci)")
+    local _, y_after = reaper.ImGui_GetCursorScreenPos(ctx)
+
+    local line_h = cue_line_height(ctx)
+    if line_h then
+      local deficit = (2 * line_h) - (y_after - y_before)
+      if deficit > 0 then
+        reaper.ImGui_Dummy(ctx, 1, deficit)
+      end
+    end
 
     colored_label(ctx, TXT_SECOND, "Region:")
     reaper.ImGui_SameLine(ctx, 0, 6)
@@ -519,100 +552,138 @@ local function draw_mc_switch(ctx, state)
   segment(mc_label .. "##rec_mc", state.recording_mc, true)
 end
 
-local function draw_settings_column(ctx, state, dl)
-  local b = block_begin(ctx)
-  reaper.ImGui_Dummy(ctx, 1, 3)
-  reaper.ImGui_Indent(ctx, 12)
-
-  colored_label(ctx, COLOR_CONTEXT, "USTAWIENIA SESJI")
-
-  local ch1, v1 = reaper.ImGui_Checkbox(ctx, "Auto-przejscie do nastepnej kwestii", state.auto_advance)
-  if ch1 then state.auto_advance = v1 end
-
-  local ch2, v2 = reaper.ImGui_Checkbox(ctx, "Pierwszy wiersz to naglowek", state.skip_header)
-  if ch2 then
-    state.skip_header = v2
-    if state.raw_rows then
-      vosan_state.load_rows(state, state.raw_rows, state.skip_header)
-    end
-  end
-
-  if state.mc_column_index then
-    reaper.ImGui_Separator(ctx)
-    draw_mc_switch(ctx, state)
-  end
-
-  reaper.ImGui_Separator(ctx)
-
-  local ch4, v4 = reaper.ImGui_Checkbox(ctx, "Przesun kursor po nagraniu", state.auto_move_cursor)
-  if ch4 then state.auto_move_cursor = v4 end
-
-  if state.auto_move_cursor then
-    reaper.ImGui_Indent(ctx, 24)
-    colored_label(ctx, TXT_SECOND, "Odstep")
-    reaper.ImGui_SameLine(ctx)
-    reaper.ImGui_SetNextItemWidth(ctx, 74)
-    -- InputDouble/DragDouble sa w ReaImGui niepewne co do wersji (patrz
-    -- historia problemow z fontami w tym pliku) - InputText jest juz
-    -- sprawdzone w tym projekcie, wiec bezpieczniej sparsowac liczbe recznie.
-    -- Do widgetu wraca DOKLADNIE to, co zwrocil poprzednio. Podawanie tu
-    -- string.format("%.2f", ...) nadpisywalo pole w trakcie pisania: wpisanie
-    -- "0,755" bylo zaokraglane do "0.76" jeszcze przed koncem edycji.
-    local ch5, v5 = reaper.ImGui_InputText(ctx, "##post_record_gap", state.post_record_gap_text)
-    if ch5 then
-      state.post_record_gap_text = v5
-      local n = tonumber((v5:gsub(",", ".")))
-      if n and n >= 0 then
-        state.post_record_gap = n
+--- Ustawienia sesji: pasek na CALA szerokosc okna, pod panelem kwestii, do
+--- zwiniecia naglowkiem. To sekcja "ustaw raz i zapomnij", wiec podczas
+--- samego nagrywania realizator moze ja schowac - ImGui pamieta stan
+--- zwiniecia miedzy uruchomieniami skryptu.
+--- Trzy grupy obok siebie stoja na BeginTable, bo kazda ma inna liczbe
+--- wierszy, a tabela sama je wyrowna.
+local function draw_settings_panel(ctx, state)
+  -- Col_Header jest globalnie przestawiony na pomaranczowy akcent zaznaczenia
+  -- wiersza w tabeli. Naglowek sekcji ma byc neutralny, wiec na czas jego
+  -- narysowania podmieniamy te trzy kolory lokalnie.
+  local n_col = 0
+  local function hcol(fn, value)
+    if type(fn) == "function" then
+      local ok, id = pcall(fn)
+      if ok and pcall(reaper.ImGui_PushStyleColor, ctx, id, value) then
+        n_col = n_col + 1
       end
     end
-    reaper.ImGui_SameLine(ctx)
-    colored_label(ctx, TXT_SECOND, "sekundy")
-    reaper.ImGui_Unindent(ctx, 24)
+  end
+  hcol(reaper.ImGui_Col_Header, BG_TBL_HEAD)
+  hcol(reaper.ImGui_Col_HeaderHovered, 0x2A323CFF)
+  hcol(reaper.ImGui_Col_HeaderActive, BG_TBL_HEAD)
+
+  local header_flags = 0
+  local ok_flag, default_open = pcall(reaper.ImGui_TreeNodeFlags_DefaultOpen)
+  if ok_flag and default_open then header_flags = default_open end
+
+  local ok_header, open = pcall(reaper.ImGui_CollapsingHeader, ctx,
+    "USTAWIENIA SESJI##vosan_settings", nil, header_flags)
+
+  if n_col > 0 then
+    reaper.ImGui_PopStyleColor(ctx, n_col)
   end
 
-  -- Checkboxy widocznosci dla kolumn "srodkowych" (nazwa skryptu i tresc
-  -- kwestii sa zawsze widoczne - to kolumny strukturalne, nie informacyjne).
-  -- Wybor jest per-etykieta i przetrwa przeladowanie pliku w tej samej sesji.
-  local labels = state.extra_labels or {}
-  if #labels > 0 then
-    reaper.ImGui_Separator(ctx)
-    colored_label(ctx, TXT_SECOND, "Kolumny:")
-    for i, label in ipairs(labels) do
+  -- Gdyby ta wersja ReaImGui nie miala CollapsingHeader, pokazujemy ustawienia
+  -- na stale - lepiej to, niz schowac je bez mozliwosci rozwiniecia.
+  if not ok_header then open = true end
+  if not open then return end
+
+  -- Ciasniejszy odstep pionowy TYLKO w tej sekcji: to gestwina checkboxow,
+  -- ktora przy globalnych 8 px rozlazi sie na wysokosc.
+  local n_var = 0
+  local ok_sp, spacing_id = pcall(reaper.ImGui_StyleVar_ItemSpacing)
+  if ok_sp and pcall(reaper.ImGui_PushStyleVar, ctx, spacing_id, 8, 5) then
+    n_var = 1
+  end
+
+  reaper.ImGui_Indent(ctx, 8)
+
+  if reaper.ImGui_BeginTable(ctx, "vosan_settings", 3,
+    reaper.ImGui_TableFlags_SizingStretchProp()) then
+
+    reaper.ImGui_TableNextRow(ctx)
+
+    -- --- Grupa 1: co sie dzieje po nagraniu ---------------------------------
+    reaper.ImGui_TableNextColumn(ctx)
+
+    local ch1, v1 = reaper.ImGui_Checkbox(ctx, "Auto-przejscie do nastepnej kwestii", state.auto_advance)
+    if ch1 then state.auto_advance = v1 end
+
+    local ch4, v4 = reaper.ImGui_Checkbox(ctx, "Przesun kursor po nagraniu", state.auto_move_cursor)
+    if ch4 then state.auto_move_cursor = v4 end
+
+    if state.auto_move_cursor then
+      -- W tej samej linii co checkbox, ktorego dotyczy - osobny wiersz pod
+      -- spodem kosztowal cala wysokosc sekcji, bo to najwyzsza z trzech grup.
+      reaper.ImGui_SameLine(ctx, 0, 14)
+      colored_label(ctx, TXT_SECOND, "Odstep")
       reaper.ImGui_SameLine(ctx)
-      local visible = not state.hidden_columns[label]
-      local changed, new_val = reaper.ImGui_Checkbox(ctx, label .. "##colvis" .. i, visible)
-      if changed then
-        if new_val then
-          state.hidden_columns[label] = nil
-        else
-          state.hidden_columns[label] = true
+      reaper.ImGui_SetNextItemWidth(ctx, 68)
+      -- InputDouble/DragDouble sa w ReaImGui niepewne co do wersji (patrz
+      -- historia problemow z fontami w tym pliku) - InputText jest juz
+      -- sprawdzone w tym projekcie, wiec bezpieczniej sparsowac liczbe recznie.
+      -- Do widgetu wraca DOKLADNIE to, co zwrocil poprzednio. Podawanie tu
+      -- string.format("%.2f", ...) nadpisywalo pole w trakcie pisania: wpisanie
+      -- "0,755" bylo zaokraglane do "0.76" jeszcze przed koncem edycji.
+      local ch5, v5 = reaper.ImGui_InputText(ctx, "##post_record_gap", state.post_record_gap_text)
+      if ch5 then
+        state.post_record_gap_text = v5
+        local n = tonumber((v5:gsub(",", ".")))
+        if n and n >= 0 then
+          state.post_record_gap = n
+        end
+      end
+      reaper.ImGui_SameLine(ctx)
+      colored_label(ctx, TXT_SECOND, "sekundy")
+    end
+
+    -- --- Grupa 2: kogo nagrywamy --------------------------------------------
+    reaper.ImGui_TableNextColumn(ctx)
+
+    if state.mc_column_index then
+      draw_mc_switch(ctx, state)
+    end
+
+    local ch2, v2 = reaper.ImGui_Checkbox(ctx, "Pierwszy wiersz to naglowek", state.skip_header)
+    if ch2 then
+      state.skip_header = v2
+      if state.raw_rows then
+        vosan_state.load_rows(state, state.raw_rows, state.skip_header)
+      end
+    end
+
+    -- --- Grupa 3: widocznosc kolumn -----------------------------------------
+    -- Checkboxy widocznosci dla kolumn "srodkowych" (nazwa skryptu i tresc
+    -- kwestii sa zawsze widoczne - to kolumny strukturalne, nie informacyjne).
+    -- Wybor jest per-etykieta i przetrwa przeladowanie pliku w tej samej sesji.
+    reaper.ImGui_TableNextColumn(ctx)
+
+    local labels = state.extra_labels or {}
+    if #labels > 0 then
+      colored_label(ctx, TXT_SECOND, "Pokaz kolumny:")
+      for i, label in ipairs(labels) do
+        reaper.ImGui_SameLine(ctx)
+        local visible = not state.hidden_columns[label]
+        local changed, new_val = reaper.ImGui_Checkbox(ctx, label .. "##colvis" .. i, visible)
+        if changed then
+          if new_val then
+            state.hidden_columns[label] = nil
+          else
+            state.hidden_columns[label] = true
+          end
         end
       end
     end
-  end
-
-  reaper.ImGui_Unindent(ctx, 12)
-  reaper.ImGui_Dummy(ctx, 1, 3)
-  block_end(ctx, dl, b, nil)
-end
-
---- Strefa gorna: kwestia po lewej, ustawienia po prawej. Uklad stoi na
---- BeginTable, a nie na BeginChild - patrz komentarz na poczatku pliku.
-local function draw_top_zone(ctx, state, dl)
-  local flags = reaper.ImGui_TableFlags_SizingStretchProp()
-  if reaper.ImGui_BeginTable(ctx, "vosan_top", 2, flags) then
-    reaper.ImGui_TableSetupColumn(ctx, "kwestia", 0, 1.0)
-    reaper.ImGui_TableSetupColumn(ctx, "ustawienia",
-      reaper.ImGui_TableColumnFlags_WidthFixed(), SETTINGS_COL_W)
-
-    reaper.ImGui_TableNextRow(ctx)
-    reaper.ImGui_TableNextColumn(ctx)
-    draw_now_recording_panel(ctx, state, dl)
-    reaper.ImGui_TableNextColumn(ctx)
-    draw_settings_column(ctx, state, dl)
 
     reaper.ImGui_EndTable(ctx)
+  end
+
+  reaper.ImGui_Unindent(ctx, 8)
+  if n_var > 0 then
+    pcall(reaper.ImGui_PopStyleVar, ctx, n_var)
   end
 end
 
@@ -728,14 +799,14 @@ local function draw_filter_controls(ctx, state, dl)
     and state.available_characters and #state.available_characters > 0
   local has_render = has_character and state.current_character ~= "Wszystkie"
 
-  -- Ten pasek nie ma prawa wchodzic pod kolumne ustawien - inaczej przy
-  -- wezszym oknie combo "Postac" konczy sie dopiero przy prawej krawedzi i na
-  -- legende nie zostaje juz miejsca. Budzet liczymy z szerokosci kolumny z
-  -- trescia kwestii, a nie z calego okna.
+  -- Pola nie moga dorosnac do legendy po prawej stronie - inaczej combo
+  -- "Postac" konczy sie dopiero przy krawedzi okna i legenda spada do nowej
+  -- linii. Budzet to szerokosc okna minus pas zarezerwowany na legende.
   local LABELS_W = 130   -- "Szukaj:" + "Postac:" + odstepy miedzy elementami
   local RENDER_W = 290   -- przycisk "Wyrenderuj nagrania tej postaci"
-  local cue_w = math.max(full_w - (SETTINGS_COL_W + 40), 240)
-  local budget = cue_w - LABELS_W - (has_render and RENDER_W or 0)
+  local LEGEND_BLOCK = 400
+  local usable = math.max(full_w - LEGEND_BLOCK - 20, 240)
+  local budget = usable - LABELS_W - (has_render and RENDER_W or 0)
   local search_w = clamp(budget * 0.45, 110, 320)
   local combo_w  = clamp(budget * 0.55, 130, 360)
 
@@ -799,7 +870,6 @@ local function draw_filter_controls(ctx, state, dl)
     -- Legenda idzie przy prawej krawedzi. Gdy sie nie miesci, same_line_right
     -- zamyka linie i legenda laduje w nastepnej - zawsze cos rysujemy, wiec
     -- tabela ponizej dostaje pelna szerokosc okna.
-    local LEGEND_BLOCK = 400
     same_line_right(ctx, row_x, full_w, LEGEND_BLOCK)
     legend_item(ctx, dl, COLOR_SELECTED, "wybrana")
     legend_item(ctx, dl, COLOR_RECORDED, "nagrana")
@@ -819,7 +889,7 @@ local function draw_table(ctx, state, dl)
   end
 
   local extra_labels = state.extra_labels or {}
-  -- indeksy kolumn srodkowych, ktore NIE sa ukryte (patrz draw_settings_column)
+  -- indeksy kolumn srodkowych, ktore NIE sa ukryte (patrz draw_settings_panel)
   local visible_extras = {}
   for i, label in ipairs(extra_labels) do
     if not state.hidden_columns[label] then
@@ -835,19 +905,46 @@ local function draw_table(ctx, state, dl)
     | reaper.ImGui_TableFlags_BordersInnerV()
     | reaper.ImGui_TableFlags_SizingStretchProp()
 
-  if reaper.ImGui_BeginTable(ctx, "vosan_table", n_cols, table_flags, avail_w, avail_h) then
+  -- Czy kolumna z nazwa postaci jest w ogole widoczna - od tego zalezy, czy
+  -- nazwa skryptu dzieli sie z nia szerokoscia, czy bierze cala.
+  local char_visible = false
+  for _, i in ipairs(visible_extras) do
+    if i == state.character_col_index then char_visible = true end
+  end
+
+  -- UWAGA: ID tabeli MUSI sie zmienic przy KAZDEJ zmianie ukladu kolumn - i to
+  -- dotyczy tak samo szerokosci w pikselach, jak i wag rozciagania ponizej.
+  -- ImGui zapisuje jedno i drugie pod ID tabeli i przywraca PO INDEKSIE, wiec
+  -- wartosci z kodu sa wtedy po prostu ignorowane. Tak wlasnie przepadl
+  -- pierwszy uklad: po dolozeniu kolumny statusu na poczatek stare szerokosci
+  -- przesunely sie o jedno pole i kropka odziedziczyla 220 px po "Nazwie
+  -- skryptu". Kolejna zmiana wag = kolejny numer w ID.
+  if reaper.ImGui_BeginTable(ctx, "vosan_table_v3", n_cols, table_flags, avail_w, avail_h) then
     local fixed = reaper.ImGui_TableColumnFlags_WidthFixed()
-    -- 34 px, a nie 24: CellPadding (10 px z kazdej strony) zjada z tej kolumny
-    -- 20 px, a sama kropka potrzebuje 10 px swiatla.
-    reaper.ImGui_TableSetupColumn(ctx, "##status", fixed, 34)
-    -- 220 px ucinalo praktycznie kazda nazwe skryptu w produkcyjnym arkuszu.
-    reaper.ImGui_TableSetupColumn(ctx, "Nazwa skryptu", fixed, 330)
+
+    -- Kolumny rozciagliwe dziela sie wolna szerokoscia proporcjonalnie do wagi.
+    -- Dzieki wagom (zamiast pikseli) podzial trzyma sie przy kazdej szerokosci
+    -- okna.
+    --
+    -- Nazwa skryptu i nazwa postaci po rowno: przy 20/80 postac dostawala
+    -- ok. 477 px na wartosc dlugosci 26 znakow, a nazwa skryptu - dluzsza,
+    -- bo 36-znakowa - dusila sie na 119 px.
+    local W_NAME, W_CHAR, W_TEXT = 0.5, 0.5, 1.5
+
+    -- 20 px = kropka (8) + poziomy CellPadding z obu stron (2 x 6).
+    reaper.ImGui_TableSetupColumn(ctx, "##status", fixed, 20)
+    reaper.ImGui_TableSetupColumn(ctx, "Nazwa skryptu", 0, char_visible and W_NAME or (W_NAME + W_CHAR))
     for _, i in ipairs(visible_extras) do
-      -- Kolumna MC trzyma "Tak"/"Nie", wiec nie potrzebuje tyle miejsca co reszta.
-      local w = (i == state.mc_column_index) and 90 or 190
-      reaper.ImGui_TableSetupColumn(ctx, extra_labels[i], fixed, w)
+      if i == state.character_col_index then
+        reaper.ImGui_TableSetupColumn(ctx, extra_labels[i], 0, W_CHAR)
+      elseif i == state.mc_column_index then
+        -- Kolumna MC trzyma "Tak"/"Nie", wiec staly, waski slupek wystarcza.
+        reaper.ImGui_TableSetupColumn(ctx, extra_labels[i], fixed, 80)
+      else
+        reaper.ImGui_TableSetupColumn(ctx, extra_labels[i], fixed, 190)
+      end
     end
-    reaper.ImGui_TableSetupColumn(ctx, "Tresc kwestii", 0, 1.0)
+    reaper.ImGui_TableSetupColumn(ctx, "Tresc kwestii", 0, W_TEXT)
     reaper.ImGui_TableSetupScrollFreeze(ctx, 0, 1)
     reaper.ImGui_TableHeadersRow(ctx)
 
@@ -992,7 +1089,8 @@ function M.draw_contents(ctx, state)
 
   draw_file_controls(ctx, state)
   draw_messages(ctx, state, dl)
-  draw_top_zone(ctx, state, dl)
+  draw_now_recording_panel(ctx, state, dl)
+  draw_settings_panel(ctx, state)
   draw_filter_controls(ctx, state, dl)
   draw_table(ctx, state, dl)
 end
