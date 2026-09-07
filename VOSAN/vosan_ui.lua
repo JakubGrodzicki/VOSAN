@@ -820,6 +820,19 @@ local function collect_character_regions(state)
   return names, count
 end
 
+--- Nazwa folderu renderu zrobiona z wartosci kolumny "plik zrodlowy". Wartosci
+--- to nazwy plikow (np. "Adam.d.json", "Adam.json"), a folder z kropka i
+--- rozszerzeniem w nazwie jest w systemie mylacy - wiec obcinamy wszystko od
+--- PIERWSZEJ kropki. Gdy po obcieciu nic nie zostaje (nazwa zaczyna sie od
+--- kropki), zostawiamy oryginal, zeby render nie trafil do samego "Nagrania".
+--- Zmiana dotyczy TYLKO sciezki renderu - nazwy postaci, filtry i regiony dalej
+--- uzywaja pelnej wartosci z arkusza.
+local function character_folder_name(character)
+  local base = tostring(character or ""):match("^([^.]*)")
+  if base == nil or base == "" then return character end
+  return base
+end
+
 --- Ustawia parametry renderu projektu pod kwestie wybranej postaci i otwiera
 --- okno renderu. Aktorowi zostaje wtedy tylko klikniecie "Render N files...".
 local function prepare_character_render(state)
@@ -850,11 +863,12 @@ local function prepare_character_render(state)
     reaper.GetSetProjectInfo(0, "RENDER_BOUNDSFLAG", RENDER_BOUNDS_ALL_REGIONS, true)
   end
 
+  local folder = character_folder_name(state.current_character)
   local path
   if reaper.GetOS():match("^Win") then
-    path = os.getenv("USERPROFILE") .. "\\Desktop\\Nagrania\\" .. state.current_character
+    path = os.getenv("USERPROFILE") .. "\\Desktop\\Nagrania\\" .. folder
   else
-    path = os.getenv("HOME") .. "/Desktop/Nagrania/" .. state.current_character
+    path = os.getenv("HOME") .. "/Desktop/Nagrania/" .. folder
   end
   reaper.GetSetProjectInfo_String(0, "RENDER_FILE", path, true)
   reaper.GetSetProjectInfo_String(0, "RENDER_PATTERN", "$region", true)
