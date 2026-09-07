@@ -51,6 +51,7 @@ function M.new()
     last_file_suggestion = nil,
     skip_header = true,
     auto_advance = true,
+    skip_recorded = true,    -- auto-przejscie omija kwestie, ktore maja juz region
     auto_move_cursor = true, -- po nagraniu przesun kursor edycji na koniec itemu + post_record_gap
     post_record_gap = 0.5,   -- sekundy odstepu doklejane po koncu nagrania przy przesuwaniu kursora
     post_record_gap_text = "0.50", -- bufor pola tekstowego dla powyzszej wartosci (patrz vosan_ui)
@@ -318,7 +319,9 @@ end
 --- jednej postaci wybor prawie zawsze wypada poza filtr, a wtedy panel "Teraz
 --- nagrywasz" pokazywalby kwestie, ktorej w tabeli nie widac. Przenosimy wybor
 --- na pierwsza kwestie pasujaca do nagrywanego zakresu (MC albo NPC), a gdy
---- takiej nie ma - na pierwsza widoczna w ogole.
+--- takiej nie ma - na pierwsza widoczna w ogole. Przy wlaczonym
+--- state.skip_recorded pierwszenstwo ma pierwsza kwestia JESZCZE NIENAGRANA,
+--- czyli ta, od ktorej realizator faktycznie zaczyna prace nad ta postacia.
 function M.ensure_selection_visible(state)
   local sel = state.selected
   if sel then
@@ -327,11 +330,16 @@ function M.ensure_selection_visible(state)
     end
   end
 
-  for _, idx in ipairs(state.filtered) do
-    local row = state.rows[idx]
-    if row and M.row_matches_target(state, row) then
-      state.selected = idx
-      return
+  local passes = state.skip_recorded and 2 or 1
+  for pass = 1, passes do
+    local skipping = state.skip_recorded and pass == 1
+    for _, idx in ipairs(state.filtered) do
+      local row = state.rows[idx]
+      if row and M.row_matches_target(state, row)
+        and not (skipping and row.recorded) then
+        state.selected = idx
+        return
+      end
     end
   end
 
@@ -347,6 +355,13 @@ end
 --- row_matches_target), zeby auto-przejscie po nagraniu nie zatrzymywalo
 --- sie na kwestiach kontekstowych drugiej postaci w arkuszu. Uzywane po
 --- auto-przejsciu po nagraniu.
+---
+--- Przy wlaczonym state.skip_recorded pierwsze podejscie omija takze kwestie
+--- juz nagrane - dogrywka przerwanej sesji nie zatrzymuje sie wtedy na kazdym
+--- wierszu zrobionym poprzednim razem. Jesli dalej na liscie nie ma juz nic
+--- nienagranego, drugie podejscie szuka bez tego warunku: lepiej stanac na
+--- kwestii nagranej (gotowej do powtorki) niz zostawic wybor w miejscu bez
+--- zadnego sygnalu dla aktora.
 function M.select_next(state)
   if not state.selected then return end
   local start_pos = nil
@@ -358,12 +373,17 @@ function M.select_next(state)
   end
   if not start_pos then return end
 
-  for pos = start_pos + 1, #state.filtered do
-    local idx = state.filtered[pos]
-    local row = state.rows[idx]
-    if row and M.row_matches_target(state, row) then
-      state.selected = idx
-      return
+  local passes = state.skip_recorded and 2 or 1
+  for pass = 1, passes do
+    local skipping = state.skip_recorded and pass == 1
+    for pos = start_pos + 1, #state.filtered do
+      local idx = state.filtered[pos]
+      local row = state.rows[idx]
+      if row and M.row_matches_target(state, row)
+        and not (skipping and row.recorded) then
+        state.selected = idx
+        return
+      end
     end
   end
 end

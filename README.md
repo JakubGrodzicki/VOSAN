@@ -116,6 +116,7 @@ VOSAN nie wymaga innych zewnętrznych bibliotek. Parser CSV, parser XLSX oraz ob
 ### Funkcje automatyzacji
 
 - **Auto-przejście:** Jeśli opcja „Auto-przejście do następnej kwestii po nagraniu” jest zaznaczona (ustawienie domyślne), VOSAN automatycznie zaznaczy kolejną kwestię z listy.
+- **Pomijanie nagranych:** Jeśli opcja „Pomijaj kwestie już nagrane” jest zaznaczona (ustawienie domyślne), auto-przejście omija kwestie, które mają już region — dogrywka przerwanej sesji nie zatrzymuje się na tym, co jest zrobione. Wiersze nagrane zostają widoczne na liście: powtórkę robisz ręcznym kliknięciem. Ta sama zasada obowiązuje przy zmianie postaci — wybór ląduje na pierwszej kwestii jeszcze nienagranej.
 - **Automatyczne przesuwanie kursora:** Jeśli opcja „Przesuń kursor na koniec nagrania automatycznie” jest zaznaczona (ustawienie domyślne), VOSAN przesunie kursor edycji za nagrany obiekt. Pole „Odstęp po nagraniu (s)” określa odległość kursora od końca nagrania (domyślnie 0.5 s).
 
 ### Powtórka nagrania (Retake)

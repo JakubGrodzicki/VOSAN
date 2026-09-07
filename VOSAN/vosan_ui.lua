@@ -552,12 +552,90 @@ local function draw_mc_switch(ctx, state)
   segment(mc_label .. "##rec_mc", state.recording_mc, true)
 end
 
+-- Etykiety dwoch checkboxow grupy "po nagraniu" sa potrzebne DWA razy: raz do
+-- zmierzenia, czy zmieszcza sie obok siebie, raz do narysowania. Rozjechanie
+-- sie tych dwoch napisow dawaloby zla decyzje o ukladzie, wiec sa stalymi.
+local LBL_AUTO_ADVANCE  = "Auto-przejscie do nastepnej kwestii"
+local LBL_SKIP_RECORDED = "Pomijaj kwestie juz nagrane"
+local LBL_SKIP_HEADER   = "Pierwszy wiersz to naglowek"
+
+-- Odstepy doliczane do zmierzonego tekstu. To przyblizenia stylu ImGui
+-- (ItemInnerSpacing, FramePadding), a nie odczyty - decyzja ponizej dotyczy
+-- tylko tego, czy dwa checkboxy stana obok siebie, wiec blad kilku pikseli
+-- niczego nie psuje. Sa celowo zawyzone: lepiej zostawic uklad pionowy o
+-- jeden piksel za wczesnie niz uciac napis.
+local LABEL_GAP   = 6   -- kwadrat checkboxa / napis
+local BUTTON_PAD  = 18  -- lewy + prawy padding przycisku
+local ITEM_GAP    = 8   -- odstep miedzy sasiadujacymi widgetami
+local PAIR_GAP    = 20  -- odstep miedzy sparowanymi checkboxami
+local COLUMN_GAP  = 16  -- padding komorki tabeli po obu stronach
+
+local function text_width(ctx, label)
+  local ok, w = pcall(reaper.ImGui_CalcTextSize, ctx, label)
+  if not ok or not w then return nil end
+  return w
+end
+
+--- Szerokosc, jaka checkbox zajmie w linii: kwadrat ramki + odstep + napis.
+--- Zwraca nil, gdy ta wersja ReaImGui nie potrafi zmierzyc tekstu - wtedy
+--- uklad schodzi do wariantu bezpiecznego (jeden checkbox na linie).
+local function checkbox_width(ctx, label)
+  local w = text_width(ctx, label)
+  if not w then return nil end
+  local ok_h, frame_h = pcall(reaper.ImGui_GetFrameHeight, ctx)
+  return ((ok_h and frame_h) or 20) + LABEL_GAP + w
+end
+
+--- Szerokosc, ktorej potrzebuja grupy 2 i 3 paska ustawien (kogo nagrywamy,
+--- widocznosc kolumn). Grupa 1 dostaje reszte - i dopiero to rozstrzyga, czy
+--- jej dwa pierwsze checkboxy zmieszcza sie w jednej linii. Zwraca nil, gdy
+--- czegokolwiek nie da sie zmierzyc.
+local function settings_side_groups_width(ctx, state)
+  local group2 = checkbox_width(ctx, LBL_SKIP_HEADER)
+  if not group2 then return nil end
+
+  if state.mc_column_index then
+    local mc_label = state.extra_labels and state.extra_labels[state.mc_column_index]
+    if not mc_label or mc_label == "" then mc_label = "MC" end
+    local w_caption = text_width(ctx, "Nagrywam:")
+    local w_npc = text_width(ctx, "NPC")
+    local w_mc = text_width(ctx, mc_label)
+    if not (w_caption and w_npc and w_mc) then return nil end
+    -- Oba przyciski przelacznika stykaja sie ze soba (SameLine z odstepem 0).
+    local switch = w_caption + ITEM_GAP + (w_npc + BUTTON_PAD) + (w_mc + BUTTON_PAD)
+    if switch > group2 then group2 = switch end
+  end
+
+  local group3 = 0
+  local labels = state.extra_labels or {}
+  if #labels > 0 then
+    local w_caption = text_width(ctx, "Pokaz kolumny:")
+    if not w_caption then return nil end
+    group3 = w_caption
+    for _, label in ipairs(labels) do
+      local w = checkbox_width(ctx, label)
+      if not w then return nil end
+      group3 = group3 + ITEM_GAP + w
+    end
+  end
+
+  return group2 + group3 + 2 * COLUMN_GAP
+end
+
 --- Ustawienia sesji: pasek na CALA szerokosc okna, pod panelem kwestii, do
 --- zwiniecia naglowkiem. To sekcja "ustaw raz i zapomnij", wiec podczas
 --- samego nagrywania realizator moze ja schowac - ImGui pamieta stan
 --- zwiniecia miedzy uruchomieniami skryptu.
 --- Trzy grupy obok siebie stoja na BeginTable, bo kazda ma inna liczbe
 --- wierszy, a tabela sama je wyrowna.
+---
+--- Wysokosc calej sekcji wyznacza grupa NAJWYZSZA, czyli pierwsza. Przy trzech
+--- checkboxach jeden pod drugim pasek zajmowal trzy linie, mimo ze dwie
+--- pozostale grupy mialy dwie i jedna. Przy dostatecznie szerokim oknie dwa
+--- pierwsze checkboxy ida w jedna linie (drugi modyfikuje pierwszy, wiec
+--- stoja obok siebie takze logicznie) i cala sekcja schodzi do dwoch linii.
+--- Przy waskim oknie zostaje uklad jeden pod drugim - lepiej trzy linie niz
+--- ucinanie napisow.
 local function draw_settings_panel(ctx, state)
   -- Col_Header jest globalnie przestawiony na pomaranczowy akcent zaznaczenia
   -- wiersza w tabeli. Naglowek sekcji ma byc neutralny, wiec na czas jego
@@ -601,6 +679,18 @@ local function draw_settings_panel(ctx, state)
 
   reaper.ImGui_Indent(ctx, 8)
 
+  -- Para zajmuje kolumne pierwsza z trzech, wiec nie moze siegnac po cala
+  -- szerokosc paska - reszta jest potrzebna dwom pozostalym grupom. Mierzymy
+  -- wiec, ile te grupy faktycznie zajma przy TYM pliku (nazwy kolumn i imie
+  -- bohatera pochodza z arkusza, wiec staly budzet procentowy bylby zgadywaniem),
+  -- i dopiero reszte szerokosci porownujemy z para.
+  local full_w = reaper.ImGui_GetContentRegionAvail(ctx) or 0
+  local w_advance = checkbox_width(ctx, LBL_AUTO_ADVANCE)
+  local w_skip = checkbox_width(ctx, LBL_SKIP_RECORDED)
+  local w_sides = settings_side_groups_width(ctx, state)
+  local pair_after_record = (w_advance ~= nil) and (w_skip ~= nil) and (w_sides ~= nil)
+    and (w_advance + PAIR_GAP + w_skip <= full_w - w_sides)
+
   if reaper.ImGui_BeginTable(ctx, "vosan_settings", 3,
     reaper.ImGui_TableFlags_SizingStretchProp()) then
 
@@ -609,8 +699,15 @@ local function draw_settings_panel(ctx, state)
     -- --- Grupa 1: co sie dzieje po nagraniu ---------------------------------
     reaper.ImGui_TableNextColumn(ctx)
 
-    local ch1, v1 = reaper.ImGui_Checkbox(ctx, "Auto-przejscie do nastepnej kwestii", state.auto_advance)
+    local ch1, v1 = reaper.ImGui_Checkbox(ctx, LBL_AUTO_ADVANCE, state.auto_advance)
     if ch1 then state.auto_advance = v1 end
+
+    -- Dogrywka przerwanej sesji: bez tego auto-przejscie zatrzymuje sie na
+    -- kazdej kwestii nagranej poprzednim razem i aktor musi je przeklikiwac.
+    -- Wiersze nagrane zostaja widoczne - powtorke robi sie recznym kliknieciem.
+    if pair_after_record then reaper.ImGui_SameLine(ctx, 0, PAIR_GAP) end
+    local ch6, v6 = reaper.ImGui_Checkbox(ctx, LBL_SKIP_RECORDED, state.skip_recorded)
+    if ch6 then state.skip_recorded = v6 end
 
     local ch4, v4 = reaper.ImGui_Checkbox(ctx, "Przesun kursor po nagraniu", state.auto_move_cursor)
     if ch4 then state.auto_move_cursor = v4 end
@@ -647,7 +744,7 @@ local function draw_settings_panel(ctx, state)
       draw_mc_switch(ctx, state)
     end
 
-    local ch2, v2 = reaper.ImGui_Checkbox(ctx, "Pierwszy wiersz to naglowek", state.skip_header)
+    local ch2, v2 = reaper.ImGui_Checkbox(ctx, LBL_SKIP_HEADER, state.skip_header)
     if ch2 then
       state.skip_header = v2
       if state.raw_rows then
