@@ -119,9 +119,11 @@ local function bounds_of(items)
   return start_pos, end_pos
 end
 
---- Wywolywana co klatke. `on_recording_finished(start_pos, end_pos)` jest
---- wolane wylacznie gdy nagrywanie sie zakonczylo i powstal co najmniej
---- jeden nowy item na uzbrojonej sciezce.
+--- Wywolywana co klatke. `on_recording_finished(start_pos, end_pos, new_items)`
+--- jest wolane wylacznie gdy nagrywanie sie zakonczylo i powstal co najmniej
+--- jeden nowy item na uzbrojonej sciezce. `new_items` to lista MediaItem -
+--- pozwala wywolujacemu zapamietac, co dokladnie powstalo (np. do cofniecia
+--- ujecia pod Ctrl+Z - patrz VOSAN.lua).
 function M.poll(on_recording_finished)
   local playstate = reaper.GetPlayState()
   local is_recording = (playstate & 4) == 4
@@ -136,7 +138,7 @@ function M.poll(on_recording_finished)
 
     if #new_items > 0 then
       local start_pos, end_pos = bounds_of(new_items)
-      on_recording_finished(start_pos, end_pos)
+      on_recording_finished(start_pos, end_pos, new_items)
       pending_deadline = nil
       store_snapshot(armed_tracks)
     elseif reaper.time_precise() > pending_deadline then

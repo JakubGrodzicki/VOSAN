@@ -509,6 +509,15 @@ local function draw_now_recording_panel(ctx, state, dl)
     colored_text(ctx, COLOR_DIM, "Brak wybranej kwestii - kliknij wiersz w tabeli ponizej.")
   end
 
+  -- Skroty dzialaja tylko z fokusem na tym oknie (patrz shortcuts_active) -
+  -- aktor sam by ich nie zgadl, wiec przypominamy o nich tu, gdzie i tak
+  -- patrzy w trakcie nagrywania.
+  local hint = "Ctrl+R: nagraj  |  Spacja: stop  |  Ctrl+Z: cofnij ostatnie ujecie"
+  if state.last_take then
+    hint = hint .. " (ostatnie: " .. state.last_take.region_name .. ")"
+  end
+  colored_text(ctx, COLOR_DIM, hint)
+
   if wrap_ok then
     pcall(reaper.ImGui_PopTextWrapPos, ctx)
   end
@@ -1158,7 +1167,84 @@ local function refresh_regions_if_needed(state)
   end
 end
 
+-- === Skroty klawiszowe (Ctrl+R / Spacja / Ctrl+Z) =========================
+-- Aktor nagrywa z rekami zajetymi sluchawkami/mikrofonem - przelaczanie
+-- fokusu do okna Reapera tylko po to, zeby nacisnac R albo spacje, jest
+-- realnym tarciem przy KAZDYM ujeciu. Te skroty dzialaja z fokusem na oknie
+-- VOSAN i wolaja transport Reapera bezposrednio (CSurf_On*), bo okno ReaImGui
+-- ma wlasny fokus klawiatury i nie przekazuje go domyslnie do globalnych
+-- skrotow Reapera.
+--
+-- FocusedFlags_RootAndChildWindows jest konieczne, nie kosmetyczne: tabela
+-- kwestii ma TableFlags_ScrollY (patrz draw_table), wiec ma WLASNE
+-- wewnetrzne okno-dziecko do przewijania. Zwykle IsWindowFocused (bez flag)
+-- patrzy tylko na okno w ktorym akurat jestesmy w stosie ID - po kliknieciu
+-- wiersza w tabeli zwrocilby false, mimo ze cale okno VOSAN nadal ma fokus
+-- systemowy.
+local function shortcuts_active(ctx)
+  return reaper.ImGui_IsWindowFocused(ctx, reaper.ImGui_FocusedFlags_RootAndChildWindows())
+    and not reaper.ImGui_IsAnyItemActive(ctx)
+end
+
+--- Ctrl+R startuje nagrywanie, Spacja je zatrzymuje - zawsze dokladnie jedno
+--- z dwoch, bez toggle'a. Guard po aktualnym stanie transportu (bit &4 z
+--- GetPlayState - ten sam, ktorego uzywa vosan_recorder) dziala poprawnie
+--- niezaleznie od tego, czy CSurf_OnRecord/OnStop przelaczaja stan czy go
+--- ustawiaja wprost - wolamy je tylko wtedy, gdy wiadomo jaki bedzie efekt.
+local function handle_transport_shortcuts(ctx)
+  if not shortcuts_active(ctx) then return end
+  local mods = reaper.ImGui_GetKeyMods(ctx)
+
+  if mods == reaper.ImGui_Mod_Ctrl()
+    and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_R(), false)
+    and (reaper.GetPlayState() & 4) == 0 then
+    reaper.CSurf_OnRecord()
+  end
+
+  if mods == reaper.ImGui_Mod_None()
+    and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Space(), false)
+    and (reaper.GetPlayState() & 4) == 4 then
+    reaper.CSurf_OnStop()
+  end
+end
+
+--- Ctrl+Z cofa OSTATNIE ujecie (state.last_take, ustawiane w
+--- VOSAN.lua:on_recording_finished): usuwa nagrany item, usuwa jego region i
+--- przesuwa wybor na poprzednia pasujaca kwestie (select_prev - ta sama
+--- logika MC/NPC i skip_recorded co przy skoku w przod). Jednopoziomowe -
+--- brak stosu cofania, zgodnie z tym o co poproszono.
+local function handle_undo_shortcut(ctx, state)
+  if not shortcuts_active(ctx) then return end
+  local mods = reaper.ImGui_GetKeyMods(ctx)
+  if mods ~= reaper.ImGui_Mod_Ctrl()
+    or not reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Z(), false) then
+    return
+  end
+
+  if not state.last_take then
+    state.last_warning = "Brak ostatniego ujecia do cofniecia."
+    return
+  end
+
+  local take = state.last_take
+  state.last_take = nil
+  regions.delete_take(take.items, take.region_name)
+
+  -- select_prev czyta row.recorded, ktore po delete_take jest JESZCZE
+  -- nieaktualne (odswieza je dopiero refresh_regions_if_needed, wolane PO tej
+  -- funkcji w draw_contents). Bez tego odswiezenia tutaj, skip_recorded
+  -- (domyslnie wlaczone) widzi wlasnie cofnieta kwestie jako wciaz "nagrana"
+  -- i przeskakuje ja, ladujac wybor o kwestie dalej niz powinien.
+  vosan_state.refresh_recorded_status(state, regions.get_region_names_set())
+  state.regions_dirty = true
+  vosan_state.select_prev(state)
+  state.last_info = "Cofnieto ostatnie ujecie: " .. take.region_name
+end
+
 function M.draw_contents(ctx, state)
+  handle_transport_shortcuts(ctx)
+  handle_undo_shortcut(ctx, state)
+
   refresh_regions_if_needed(state)
 
   local dl = get_draw_list(ctx)

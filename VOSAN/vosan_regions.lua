@@ -59,6 +59,34 @@ function M.create_or_replace_region(name, start_pos, end_pos)
   return idx
 end
 
+--- Odwrotnosc create_or_replace_region: usuwa itemy nagrane w ostatnim ujeciu
+--- oraz odpowiadajacy im region (patrz state.last_take w VOSAN.lua). Uzywane
+--- pod Ctrl+Z w oknie VOSAN.
+---
+--- Region szukany jest PO NAZWIE (find_region_by_name), tak samo jak w
+--- create_or_replace_region, a nie po zapamietanym wczesniej indeksie -
+--- indeks moglby sie zdezaktualizowac, gdyby ktos w miedzyczasie recznie
+--- edytowal regiony w Region Managerze REAPERa.
+--- @param items table lista MediaItem do usuniecia z ich sciezek
+--- @param region_name string nazwa regionu utworzonego dla tego ujecia
+function M.delete_take(items, region_name)
+  reaper.Undo_BeginBlock()
+
+  for _, item in ipairs(items or {}) do
+    local track = reaper.GetMediaItemTrack(item)
+    if track then
+      reaper.DeleteTrackMediaItem(track, item)
+    end
+  end
+
+  local existing = region_name and M.find_region_by_name(region_name)
+  if existing then
+    reaper.DeleteProjectMarker(0, existing.markrgnindexnumber, true)
+  end
+
+  reaper.Undo_EndBlock("VOSAN: cofnij ostatnie ujecie", -1)
+end
+
 --- Przygotowuje Region Render Matrix (tylko na sciezce Master) dla podanych regionow.
 --- Parametr `regionindex` funkcji SetRegionRenderMatrix to markrgnindexnumber
 --- z EnumProjectMarkers3 (numer regionu), a NIE indeks enumeracji - dokumentacja

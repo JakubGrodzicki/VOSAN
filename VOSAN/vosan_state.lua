@@ -63,6 +63,7 @@ function M.new()
     target_recorded = 0,     -- z tego juz nagrane
     regions_dirty = true,
     _last_region_refresh = 0,
+    last_take = nil,          -- {items, region_name} ostatniego nagrania - do Ctrl+Z (patrz VOSAN.lua)
   }
 end
 
@@ -231,6 +232,9 @@ function M.load_rows(state, raw_rows, skip_header)
   state.selected = (#rows > 0) and 1 or nil
   state.duplicates = M.find_duplicates(rows)
   state.regions_dirty = true
+  -- Nowy plik = nowy kontekst kwestii; odniesienie do ostatniego ujecia
+  -- sprzed przeladowania nie ma juz sensu do cofniecia pod Ctrl+Z.
+  state.last_take = nil
   M.refresh_filter(state)
   M.refresh_target_counts(state)
   return rows
@@ -377,6 +381,38 @@ function M.select_next(state)
   for pass = 1, passes do
     local skipping = state.skip_recorded and pass == 1
     for pos = start_pos + 1, #state.filtered do
+      local idx = state.filtered[pos]
+      local row = state.rows[idx]
+      if row and M.row_matches_target(state, row)
+        and not (skipping and row.recorded) then
+        state.selected = idx
+        return
+      end
+    end
+  end
+end
+
+--- Lustrzane odbicie select_next (patrz komentarz wyzej) - przesuwa wybor na
+--- POPRZEDNI PASUJACY wiersz w obrebie odfiltrowanego zbioru, z ta sama
+--- dwuprzebiegowa logika skip_recorded i tym samym row_matches_target
+--- (MC/NPC, postac). Uzywane pod Ctrl+Z w oknie VOSAN po cofnieciu ostatniego
+--- ujecia - wybor ma wrocic tam, gdzie realizator faktycznie byl przed tym
+--- ujeciem, z uwzglednieniem tych samych "udziwnien" co przy skoku w przod.
+function M.select_prev(state)
+  if not state.selected then return end
+  local start_pos = nil
+  for pos, idx in ipairs(state.filtered) do
+    if idx == state.selected then
+      start_pos = pos
+      break
+    end
+  end
+  if not start_pos then return end
+
+  local passes = state.skip_recorded and 2 or 1
+  for pass = 1, passes do
+    local skipping = state.skip_recorded and pass == 1
+    for pos = start_pos - 1, 1, -1 do
       local idx = state.filtered[pos]
       local row = state.rows[idx]
       if row and M.row_matches_target(state, row)

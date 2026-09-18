@@ -44,7 +44,7 @@ local ctx = reaper.ImGui_CreateContext('VOSAN - Voice Over Script Auto Namer')
 -- w API miedzy wersjami ReaImGui, wiec brak fontu nie przerywa startu skryptu.
 pcall(ui.init_fonts, ctx)
 
-local function on_recording_finished(start_pos, end_pos)
+local function on_recording_finished(start_pos, end_pos, new_items)
   local recorded_row = state.selected and state.rows[state.selected]
   local name
 
@@ -62,6 +62,11 @@ local function on_recording_finished(start_pos, end_pos)
 
   regions.create_or_replace_region(name, start_pos, end_pos)
   state.regions_dirty = true
+
+  -- Zapamietane do Ctrl+Z (patrz vosan_ui.lua) - pozwala cofnac dokladnie to,
+  -- co powstalo przy TYM nagraniu (item(y) + region), bez trzymania calej
+  -- historii ujec.
+  state.last_take = { items = new_items, region_name = name }
 
   if recorded_row and recorded_row.script_name_safe ~= "" and state.auto_advance then
     vosan_state.select_next(state)
