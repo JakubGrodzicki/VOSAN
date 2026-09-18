@@ -938,9 +938,6 @@ local function draw_filter_controls(ctx, state, dl)
   if changed then
     state.filter_text = new_val
     vosan_state.refresh_filter(state)
-    -- Filtr przestawia pozycje wierszy, wiec poprzednio wyliczone przewiniecie
-    -- juz nie pasuje - wymuszamy ponowne dojechanie do wybranej kwestii.
-    state._scrolled_to = nil
   end
 
   if has_character then
@@ -959,9 +956,6 @@ local function draw_filter_controls(ctx, state, dl)
           vosan_state.refresh_filter(state)
           vosan_state.ensure_selection_visible(state)
           vosan_state.refresh_target_counts(state)
-          -- Pozycje wierszy sie zmienily, wiec auto-przewijanie musi dojechac
-          -- do wyboru na nowo.
-          state._scrolled_to = nil
         end
         if is_selected then
           reaper.ImGui_SetItemDefaultFocus(ctx)
@@ -1080,48 +1074,13 @@ local function draw_table(ctx, state, dl)
     local filtered = state.filtered
     local span_flag = reaper.ImGui_SelectableFlags_SpanAllColumns()
 
-    -- === Auto-przewijanie do wybranej kwestii ==============================
-    -- Po auto-przejsciu (select_next) wybor potrafi wyladowac ponizej
-    -- widocznego zakresu, a pasek przewijania zostaje na miejscu - aktor traci
-    -- swoja kwestie z oczu. Przewijamy TYLKO wtedy, gdy wybor faktycznie
-    -- wypadl poza widok, zeby nie odbierac realizatorowi recznego przewijania.
-    --
-    -- Wysokosc wiersza jest MIERZONA (patrz nizej), a nie zakladana: zalezy od
-    -- CellPadding i wysokosci linii tekstu, wiec liczenie jej z gory
-    -- rozjechaloby sie przy kazdej zmianie stylu albo skali interfejsu.
-    if state.selected ~= state._scrolled_to then
-      local row_h = state._row_h
-      if row_h and row_h > 0 then
-        local pos = nil
-        for i = 1, #filtered do
-          if filtered[i] == state.selected then
-            pos = i
-            break
-          end
-        end
-
-        if pos then
-          local top = (pos - 1) * row_h
-          local ok_scroll, scroll = pcall(reaper.ImGui_GetScrollY, ctx)
-          -- Widoczna wysokosc to wysokosc tabeli minus wiersz naglowka.
-          local view = math.max((avail_h or 0) - row_h, row_h)
-          if ok_scroll and scroll then
-            if top < scroll then
-              pcall(reaper.ImGui_SetScrollY, ctx, math.max(top - row_h, 0))
-            elseif top + row_h > scroll + view then
-              -- Zostawiamy jeden wiersz zapasu pod spodem, zeby bylo widac,
-              -- co bedzie nastepne.
-              pcall(reaper.ImGui_SetScrollY, ctx, top + 2 * row_h - view)
-            end
-          end
-        end
-        state._scrolled_to = state.selected
-      end
-    end
-
-    -- Dwa kolejne wiersze wystarcza, zeby zmierzyc skok pionowy miedzy nimi.
-    local probe_y1, probe_y2 = nil, nil
-
+    -- Auto-przewijanie zostalo swiadomie usuniete: kazda wersja (dosuwanie do
+    -- krawedzi, potem centrowanie) potrafila w pewnych ukladach przeliczyc
+    -- ScrollY na wartosc powyzej ScrollMaxY, a ReaImGui przycina to po cichu
+    -- do samego dolu tabeli - z perspektywy realizatora wygladalo to jak
+    -- przypadkowy skok na koniec listy. Tabela teraz w ogole nie rusza
+    -- pozycji przewijania programowo - zostaje tam, gdzie zostawil ja
+    -- realizator, niezaleznie od auto-przejscia po nagraniu.
     reaper.ImGui_ListClipper_Begin(clipper, #filtered)
     while reaper.ImGui_ListClipper_Step(clipper) do
       local display_start, display_end = reaper.ImGui_ListClipper_GetDisplayRange(clipper)
@@ -1151,10 +1110,6 @@ local function draw_table(ctx, state, dl)
           end
 
           reaper.ImGui_TableNextColumn(ctx)
-          if probe_y2 == nil then
-            local _, probe_y = reaper.ImGui_GetCursorScreenPos(ctx)
-            if probe_y1 == nil then probe_y1 = probe_y else probe_y2 = probe_y end
-          end
           status_dot(ctx, dl, dot_color)
 
           reaper.ImGui_TableNextColumn(ctx)
@@ -1187,10 +1142,6 @@ local function draw_table(ctx, state, dl)
           if color then reaper.ImGui_PopStyleColor(ctx) end
         end
       end
-    end
-
-    if probe_y1 and probe_y2 and probe_y2 > probe_y1 then
-      state._row_h = probe_y2 - probe_y1
     end
 
     reaper.ImGui_EndTable(ctx)
