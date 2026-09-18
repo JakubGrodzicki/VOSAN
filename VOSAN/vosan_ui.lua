@@ -324,12 +324,22 @@ end
 
 -- === Pasek gorny: plik + postep ===========================================
 
+--- Katalog Pobrane uzytkownika - tam najczesciej ladowane sa pliki eksportowane
+--- ze skryptu dubbingowego, wiec to sensowny start dla okna wyboru pliku.
+local function downloads_dir()
+  if reaper.GetOS():match("^Win") then
+    return (os.getenv("USERPROFILE") or "") .. "\\Downloads\\"
+  else
+    return (os.getenv("HOME") or "") .. "/Downloads/"
+  end
+end
+
 local function draw_file_controls(ctx, state)
   local row_x = reaper.ImGui_GetCursorPosX(ctx)
   local full_w = reaper.ImGui_GetContentRegionAvail(ctx) or 0
 
   if reaper.ImGui_Button(ctx, "Wczytaj plik (CSV / XLSX)...") then
-    local ok, path = reaper.GetUserFileNameForRead("", "Wybierz plik ze skryptem dubbingowym", "")
+    local ok, path = reaper.GetUserFileNameForRead(downloads_dir(), "Wybierz plik ze skryptem dubbingowym", "")
     if ok then
       M.load_file(state, path)
     end
