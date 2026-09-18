@@ -30,6 +30,7 @@ local vosan_state = require("vosan_state")
 local csv = require("vosan_csv")
 local xlsx = require("vosan_xlsx")
 local regions = require("vosan_regions")
+local scroll = require("vosan_scroll")
 
 local M = {}
 
@@ -1071,10 +1072,12 @@ local function draw_table(ctx, state, dl)
     local span_flag = reaper.ImGui_SelectableFlags_SpanAllColumns()
 
     -- === Auto-przewijanie do wybranej kwestii ==============================
-    -- Po auto-przejsciu (select_next) wybor potrafi wyladowac ponizej
-    -- widocznego zakresu, a pasek przewijania zostaje na miejscu - aktor traci
-    -- swoja kwestie z oczu. Przewijamy TYLKO wtedy, gdy wybor faktycznie
-    -- wypadl poza widok, zeby nie odbierac realizatorowi recznego przewijania.
+    -- Po auto-przejsciu (select_next) wybor potrafi wyladowac poza widocznym
+    -- zakresem, a pasek przewijania zostaje na miejscu - aktor traci swoja
+    -- kwestie z oczu. Przewijamy TYLKO wtedy, gdy wybor faktycznie wypadl poza
+    -- widok, zeby nie odbierac realizatorowi recznego przewijania. Docelowa
+    -- pozycja centruje wybrany wiersz w widoku - patrz vosan_scroll.lua po
+    -- uzasadnienie, dlaczego nie dosuwamy juz do krawedzi.
     --
     -- Wysokosc wiersza jest MIERZONA (patrz nizej), a nie zakladana: zalezy od
     -- CellPadding i wysokosci linii tekstu, wiec liczenie jej z gory
@@ -1092,16 +1095,15 @@ local function draw_table(ctx, state, dl)
 
         if pos then
           local top = (pos - 1) * row_h
-          local ok_scroll, scroll = pcall(reaper.ImGui_GetScrollY, ctx)
+          local ok_scroll, scroll_y = pcall(reaper.ImGui_GetScrollY, ctx)
           -- Widoczna wysokosc to wysokosc tabeli minus wiersz naglowka.
           local view = math.max((avail_h or 0) - row_h, row_h)
-          if ok_scroll and scroll then
-            if top < scroll then
-              pcall(reaper.ImGui_SetScrollY, ctx, math.max(top - row_h, 0))
-            elseif top + row_h > scroll + view then
-              -- Zostawiamy jeden wiersz zapasu pod spodem, zeby bylo widac,
-              -- co bedzie nastepne.
-              pcall(reaper.ImGui_SetScrollY, ctx, top + 2 * row_h - view)
+          if ok_scroll and scroll_y then
+            local ok_max, max_scroll = pcall(reaper.ImGui_GetScrollMaxY, ctx)
+            local target = scroll.compute_scroll_target(
+              top, row_h, view, scroll_y, ok_max and max_scroll or nil)
+            if target then
+              pcall(reaper.ImGui_SetScrollY, ctx, target)
             end
           end
         end
