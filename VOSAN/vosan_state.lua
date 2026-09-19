@@ -9,6 +9,8 @@
 -- Status "nagrane" jest wyliczany na zywo z listy regionow projektu (patrz
 -- refresh_recorded_status) - nie jest tu trzymany jako osobny stan.
 
+local scroll = require("vosan_scroll")
+
 local M = {}
 
 local INVALID_FS_CHARS = '[\\/:%*%?"<>|]'
@@ -64,6 +66,7 @@ function M.new()
     regions_dirty = true,
     _last_region_refresh = 0,
     last_take = nil,          -- {items, region_name} ostatniego nagrania - do Ctrl+Z (patrz VOSAN.lua)
+    _scroll_anchor = nil,     -- ostatni wybor doprowadzony do widoku tabeli (patrz vosan_scroll)
   }
 end
 
@@ -285,6 +288,11 @@ end
 --- rozroznienie jest calym sednem: bez niego arkusz na 60 tys. kwestii trzeba
 --- bylo przewijac w poszukiwaniu 69 kwestii jednej postaci.
 function M.refresh_filter(state)
+  -- Pozycje wierszy sie zmieniaja, wiec wybor trzeba doprowadzic do widoku na
+  -- nowo. To jedyne miejsce, gdzie trzeba o tym pamietac: przez refresh_filter
+  -- przechodzi i szukajka, i wybor postaci, i wczytanie pliku (load_rows).
+  scroll.invalidate(state)
+
   local q = (state.filter_text or ""):lower()
   local rows = state.rows
   local filtered = {}

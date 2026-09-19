@@ -30,6 +30,7 @@ local vosan_state = require("vosan_state")
 local csv = require("vosan_csv")
 local xlsx = require("vosan_xlsx")
 local regions = require("vosan_regions")
+local scroll = require("vosan_scroll")
 
 local M = {}
 
@@ -254,7 +255,20 @@ local function status_dot(ctx, dl, color)
   local h = 16
   local ok_h, line_h = pcall(reaper.ImGui_GetTextLineHeight, ctx)
   if ok_h and line_h then h = line_h end
-  if dl and color then
+  -- `dl` to lista rysowania OKNA VOSAN, a nie tabeli (pobierana raz w
+  -- draw_contents), wiec kolo trafia tam z pominieciem przycinania tabeli. Dla
+  -- wiersza spoza widoku wyladowaloby obok tabeli, np. na pasku legendy. Same
+  -- teksty i Selectable tego nie robia, bo ida zwykla sciezka ImGui, ktora
+  -- odrzuca elementy poza obszarem - ten jeden rysunek trzeba sprawdzic recznie.
+  --
+  -- Wiersze spoza widoku trafiaja tu z dwoch powodow: ListClipper sklada wiersz
+  -- 0 w kazdej klatce, zeby zmierzyc wysokosc wiersza, a draw_table doklada
+  -- wybrana kwestie przez IncludeItemByIndex, zeby mialo sie do czego przewinac.
+  local on_screen = true
+  local ok_vis, vis = pcall(reaper.ImGui_IsRectVisible, ctx, 8, h)
+  if ok_vis then on_screen = vis end
+
+  if dl and color and on_screen then
     pcall(reaper.ImGui_DrawList_AddCircleFilled, dl, x + 4, y + h * 0.5, 4, color)
   end
   -- Kropka o srednicy 8 px zajmuje dokladnie tyle miejsca, ile rysuje - kazdy
@@ -1083,14 +1097,28 @@ local function draw_table(ctx, state, dl)
     local filtered = state.filtered
     local span_flag = reaper.ImGui_SelectableFlags_SpanAllColumns()
 
-    -- Auto-przewijanie zostalo swiadomie usuniete: kazda wersja (dosuwanie do
-    -- krawedzi, potem centrowanie) potrafila w pewnych ukladach przeliczyc
-    -- ScrollY na wartosc powyzej ScrollMaxY, a ReaImGui przycina to po cichu
-    -- do samego dolu tabeli - z perspektywy realizatora wygladalo to jak
-    -- przypadkowy skok na koniec listy. Tabela teraz w ogole nie rusza
-    -- pozycji przewijania programowo - zostaje tam, gdzie zostawil ja
-    -- realizator, niezaleznie od auto-przejscia po nagraniu.
+    -- === Auto-przewijanie do wybranej kwestii ==============================
+    -- Po auto-przejsciu (select_next) wybor potrafi wyladowac daleko poza
+    -- widokiem - przy wlaczonym skip_recorded nawet o kilkanascie wierszy - a
+    -- pasek przewijania zostaje na miejscu i aktor traci swoja kwestie z oczu.
+    --
+    -- Celu NIE liczymy sami. Dwa wczesniejsze podejscia (commity 4b504ff i
+    -- befc03b) liczyly go z wysokosci wiersza mierzonej w tej petli i konczyly
+    -- skokiem na sam dol tabeli - dlaczego dokladnie, opisuje naglowek
+    -- vosan_scroll.lua. Tutaj tylko wymuszamy zlozenie wybranego wiersza, a
+    -- pozycje wyznacza ImGui_SetScrollHereY z gotowego prostokata tego wiersza
+    -- (patrz nizej).
+    local scroll_to, scroll_id = scroll.pending_item(state)
+
     reaper.ImGui_ListClipper_Begin(clipper, #filtered)
+    if scroll_to then
+      -- Wiersz poza widokiem normalnie w ogole nie trafia do klatki, wiec nie
+      -- byloby na czym oprzec przewijania. IncludeItemByIndex MUSI byc wolane
+      -- po ListClipper_Begin i PRZED pierwszym Step - taka jest kolejnosc w
+      -- dokumentacji ReaImGui (funkcja jest od v0.9; pcall zostawia starsze
+      -- wersje bez przewijania zamiast z bledem).
+      pcall(reaper.ImGui_ListClipper_IncludeItemByIndex, clipper, scroll_to)
+    end
     while reaper.ImGui_ListClipper_Step(clipper) do
       local display_start, display_end = reaper.ImGui_ListClipper_GetDisplayRange(clipper)
       for row_i = display_start, display_end - 1 do
@@ -1126,6 +1154,14 @@ local function draw_table(ctx, state, dl)
           -- etykieta jest skladana raz, przy wczytaniu pliku (vosan_state)
           local clicked = reaper.ImGui_Selectable(ctx, row.ui_label, idx == state.selected, span_flag)
           if color then reaper.ImGui_PopStyleColor(ctx) end
+
+          -- SetScrollHereY liczy cel z OSTATNIO zlozonej linii, wiec musi stac
+          -- tutaj - przy wierszu, o ktory chodzi - a nie po petli.
+          if scroll_to and row_i == scroll_to then
+            pcall(reaper.ImGui_SetScrollHereY, ctx, scroll.CENTER_RATIO)
+            scroll.mark_done(state, scroll_id)
+          end
+
           if clicked then
             state.selected = idx
           end
@@ -1151,6 +1187,15 @@ local function draw_table(ctx, state, dl)
           if color then reaper.ImGui_PopStyleColor(ctx) end
         end
       end
+    end
+
+    -- Siatka bezpieczenstwa na wypadek, gdyby wybrany wiersz mimo wszystko nie
+    -- trafil do tej klatki (starsza wersja ReaImGui bez IncludeItemByIndex,
+    -- wiec pcall wyzej nic nie zrobil). Bez tego pending_item przeszukiwaloby
+    -- cala przefiltrowana liste w kazdej klatce, w kolko. Tabela zachowuje sie
+    -- wtedy jak przed zmiana - po prostu nie przewija - zamiast obciazac petle.
+    if scroll_to then
+      scroll.mark_done(state, scroll_id)
     end
 
     reaper.ImGui_EndTable(ctx)
