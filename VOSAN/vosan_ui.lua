@@ -1038,7 +1038,7 @@ local function draw_table(ctx, state, dl)
       visible_extras[#visible_extras + 1] = i
     end
   end
-  local n_cols = 3 + #visible_extras -- status + nazwa skryptu + kolumny srodkowe + tresc
+  local n_cols = 4 + #visible_extras -- numer + status + nazwa skryptu + kolumny srodkowe + tresc
 
   local avail_w, avail_h = reaper.ImGui_GetContentRegionAvail(ctx)
   local table_flags = reaper.ImGui_TableFlags_Resizable()
@@ -1061,7 +1061,7 @@ local function draw_table(ctx, state, dl)
   -- pierwszy uklad: po dolozeniu kolumny statusu na poczatek stare szerokosci
   -- przesunely sie o jedno pole i kropka odziedziczyla 220 px po "Nazwie
   -- skryptu". Kolejna zmiana wag = kolejny numer w ID.
-  if reaper.ImGui_BeginTable(ctx, "vosan_table_v3", n_cols, table_flags, avail_w, avail_h) then
+  if reaper.ImGui_BeginTable(ctx, "vosan_table_v4", n_cols, table_flags, avail_w, avail_h) then
     local fixed = reaper.ImGui_TableColumnFlags_WidthFixed()
 
     -- Kolumny rozciagliwe dziela sie wolna szerokoscia proporcjonalnie do wagi.
@@ -1073,6 +1073,8 @@ local function draw_table(ctx, state, dl)
     -- bo 36-znakowa - dusila sie na 119 px.
     local W_NAME, W_CHAR, W_TEXT = 0.5, 0.5, 1.5
 
+    -- Liczba porzadkowa wiersza (pozycja w arkuszu), 36 px miesci 4 cyfry.
+    reaper.ImGui_TableSetupColumn(ctx, "#", fixed, 36)
     -- 20 px = kropka (8) + poziomy CellPadding z obu stron (2 x 6).
     reaper.ImGui_TableSetupColumn(ctx, "##status", fixed, 20)
     reaper.ImGui_TableSetupColumn(ctx, "Nazwa skryptu", 0, char_visible and W_NAME or (W_NAME + W_CHAR))
@@ -1145,6 +1147,11 @@ local function draw_table(ctx, state, dl)
           if row.recorded then
             dot_color = COLOR_RECORDED
           end
+
+          reaper.ImGui_TableNextColumn(ctx)
+          if color then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), color) end
+          reaper.ImGui_Text(ctx, tostring(row.n))
+          if color then reaper.ImGui_PopStyleColor(ctx) end
 
           reaper.ImGui_TableNextColumn(ctx)
           status_dot(ctx, dl, dot_color)
