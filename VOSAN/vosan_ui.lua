@@ -1310,17 +1310,19 @@ function M.draw_contents(ctx, state)
 end
 
 --- Rysuje jedna klatke okna. Zwraca `open` (false gdy realizator zamknal okno).
---- ImGui_End MUSI byc wywolane zawsze, gdy ImGui_Begin sie powiodl - takze
---- wtedy, gdy rysowanie zawartosci (draw_contents) rzuci blad w trakcie.
---- Pominiecie End() zostawia caly kontekst ReaImGui w trwale uszkodzonym
---- stanie ("Missing End()") az do ponownego uruchomienia skryptu, dlatego
---- Begin/draw_contents sa owiniete w pcall, a End wywolywane jest osobno,
---- bezwarunkowo, jesli tylko Begin zdazyl sie wykonac.
+--- ImGui_End wolamy WYLACZNIE gdy ImGui_Begin zwrocil visible=true (zasada
+--- ReaImGui; inaczej niz w czystym Dear ImGui). Gdy okno jest zwiniete
+--- (strzalka w lewym gornym rogu) Begin zwraca false, a wywolanie End dawalo
+--- "Calling End() too many times" i niszczylo kontekst. Zwiniecie zapisuje sie
+--- w imgui.ini, wiec bez resetu skrypt wstawalby zwiniety przy kazdym starcie
+--- - dlatego pierwsza klatka sesji rozwija okno (SetNextWindowCollapsed).
+--- Jesli draw_contents rzuci blad po udanym Begin, End nadal musi pasowac do
+--- Begin, wiec Begin/draw_contents sa w pcall, a End wolane jest osobno.
 ---
---- Ta sama zasada dotyczy stylu: PushStyleVar musi zajsc PRZED Begin (inaczej
---- WindowPadding nie zadziala na to okno), a odpowiadajace mu Pop - po End,
---- bezwarunkowo. Liczby pushy sa liczone, bo czesc stalych Col_*/StyleVar_*
---- moze nie istniec w danej wersji ReaImGui.
+--- PushStyleVar musi zajsc PRZED Begin (inaczej WindowPadding nie zadziala na
+--- to okno), a odpowiadajace mu Pop - po End, bezwarunkowo. Liczby pushy sa
+--- liczone, bo czesc stalych Col_*/StyleVar_* moze nie istniec w danej wersji
+--- ReaImGui.
 function M.frame(ctx, state)
   local n_vars = push_theme_vars(ctx)
   local n_cols = push_theme_colors(ctx)
@@ -1330,10 +1332,12 @@ function M.frame(ctx, state)
 
   local ok, err = pcall(function()
     reaper.ImGui_SetNextWindowSize(ctx, 1240, 820, reaper.ImGui_Cond_FirstUseEver())
+    pcall(reaper.ImGui_SetNextWindowCollapsed, ctx, false, reaper.ImGui_Cond_Once())
     local visible
-    visible, open = reaper.ImGui_Begin(ctx, 'VOSAN - Voice Over Script Auto Namer', true)
-    began = true
+    visible, open = reaper.ImGui_Begin(ctx, 'VOSAN - Voice Over Script Auto Namer', true,
+      reaper.ImGui_WindowFlags_NoCollapse())
     if visible then
+      began = true
       M.draw_contents(ctx, state)
     end
   end)
