@@ -379,18 +379,27 @@ local function draw_file_controls(ctx, state)
     -- same_line_right przenosi go do nowej zamiast wypychac poza okno.
     local file_total = #state.rows
     local narrowed = file_total > total
-    same_line_right(ctx, row_x, full_w, narrowed and 420 or 300)
+    same_line_right(ctx, row_x, full_w, narrowed and 480 or 360)
 
     local done = state.target_recorded or 0
+    -- AlignTextToFramePadding opuszcza tekst o FramePadding.y, a ProgressBar
+    -- rysuje sie od gornej krawedzi wiersza. Pasek o wysokosci ramki (tekst +
+    -- 2*FramePadding.y) ma wiec tekst dokladnie posrodku.
+    pcall(reaper.ImGui_AlignTextToFramePadding, ctx)
+    local ok_h, bar_h = pcall(reaper.ImGui_GetFrameHeight, ctx)
+    if not ok_h or not bar_h then bar_h = 20 end
     colored_label(ctx, TXT_SECOND, "Nagrano")
     reaper.ImGui_SameLine(ctx)
-    local shown = pcall(reaper.ImGui_ProgressBar, ctx, done / total, 190, 14, "")
+    local shown = pcall(reaper.ImGui_ProgressBar, ctx, done / total, 190, bar_h, "")
     if shown then
       reaper.ImGui_SameLine(ctx)
     end
     colored_label(ctx, done >= total and COLOR_RECORDED or TXT_MAIN, tostring(done))
     reaper.ImGui_SameLine(ctx, 0, 4)
     colored_label(ctx, TXT_SECOND, "/ " .. tostring(total))
+    reaper.ImGui_SameLine(ctx, 0, 8)
+    colored_label(ctx, done >= total and COLOR_RECORDED or TXT_MAIN,
+      string.format("%d%%", math.floor(done * 100 / total)))
 
     -- Gdy zakres jest wezszy niz plik, mowimy to wprost - inaczej "8 / 8" przy
     -- 12 wierszach na liscie wyglada jak blad licznika.
